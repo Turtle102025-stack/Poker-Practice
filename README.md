@@ -11,11 +11,22 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 | Phase | What | Status |
 |---|---|---|
 | 1 | Poker engine, hand evaluator, tests | ✅ Done |
-| 2 | Table UI with simple bots | Next |
-| 3 | 50 player personalities, seating, tilt | |
+| 2 | Table UI with simple bots | ✅ Done |
+| 3 | 50 player personalities, seating, tilt | Next |
 | 4 | Lobby, bankroll, buy-ins, saving progress | |
 | 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | |
 | 6 | Notes, stats page, practice mode, polish | |
+
+## Playing
+
+- **Fold / Check-Call / Bet-Raise.** Size bets with the quick buttons (Min, ⅓, ½, ⅔ pot,
+  Pot, All-in), the slider, or by typing an amount. If an amount isn't legal, it's
+  adjusted and the reason is shown (e.g. "Minimum raise is to $67"); click again to confirm.
+- **Keyboard:** `F` fold, `C` check/call, `R` bet/raise, `Space` deal the next hand.
+- **Settings (⚙):** computer player speed, when to deal the next hand, fast-forward after
+  folding, practice mode (show all hole cards after each hand), straddle when under the
+  gun, four-color deck, show your current hand.
+- **Pause** stops the computer players; **Fast-forward** finishes a hand you're out of.
 
 ## How it's checked
 
@@ -67,5 +78,6 @@ Code layout:
 - `src/engine/` pure poker engine (no UI): cards, RNG, evaluator, betting, pots,
   button movement, player view (the only data computer players receive)
 - `src/ai/` computer players
+- `src/table/` table controller: the game loop between the engine, the computer players and the UI
 - `src/ui/` React user interface
 - `scripts/` command-line tools
