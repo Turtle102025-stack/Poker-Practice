@@ -17,6 +17,11 @@ export interface SeatingContext {
   tilt: (playerId: string) => number;
 }
 
+export interface SeatingState {
+  cooldown: Array<[string, number]>;
+  sessions: Array<[string, { since: number; boughtIn: number }]>;
+}
+
 export interface ChurnResult {
   seats: Array<Occupant | null>;
   notices: string[];
@@ -36,6 +41,15 @@ export class Seating {
     private readonly rng: Rng,
     private readonly roster: RosterPlayer[] = ROSTER,
   ) {}
+
+  exportState(): SeatingState {
+    return { cooldown: [...this.cooldown], sessions: [...this.sessions] };
+  }
+
+  importState(s: SeatingState): void {
+    this.cooldown = new Map(s.cooldown);
+    this.sessions = new Map(s.sessions);
+  }
 
   /** Buy-in amount for a player at these stakes, by their habit. */
   buyInFor(p: RosterPlayer): number {

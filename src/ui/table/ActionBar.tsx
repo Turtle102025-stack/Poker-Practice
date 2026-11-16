@@ -9,7 +9,9 @@ import { money, signedMoney } from '../format';
 interface Props {
   snap: TableSnapshot;
   ctl: TableController;
-  topUpTo: number;
+  /** Opens the add-chips dialog; undefined when you can't add chips right now. */
+  onAddChips?: () => void;
+  onLeave?: () => void;
 }
 
 const QUICK: Array<{ label: string; fraction: number | 'min' | 'all' }> = [
@@ -23,19 +25,46 @@ const QUICK: Array<{ label: string; fraction: number | 'min' | 'all' }> = [
 
 const SLIDER_STEPS = 1000;
 
-export function ActionBar({ snap, ctl, topUpTo }: Props) {
+export function ActionBar({ snap, ctl, onAddChips, onLeave }: Props) {
   const { hand, heroSeat, stage } = snap;
   const heroTurn = !!hand && stage === 'in-hand' && hand.toAct === heroSeat;
   const legal = heroTurn ? legalActions(hand!) : null;
+  if (snap.heroBusted) {
+    return (
+      <div className="action-bar over">
+        <b className="neg">You're out of chips.</b>
+        <div className="row wrap">
+          {onAddChips ? <button className="act raise" onClick={onAddChips}>Rebuy</button> : <span className="muted">Your bankroll can't cover a rebuy.</span>}
+          {onLeave && <button onClick={onLeave}>Leave table</button>}
+        </div>
+      </div>
+    );
+  }
   if (!hand) return <div className="action-bar"><p className="muted">Waiting for players…</p></div>;
-  if (stage === 'hand-over') return <HandOver snap={snap} ctl={ctl} topUpTo={topUpTo} />;
+  if (stage === 'hand-over') return <HandOver snap={snap} ctl={ctl} onAddChips={onAddChips} />;
   if (heroTurn && legal) return <YourTurn snap={snap} ctl={ctl} legal={legal} />;
 
   const hero = hand.players.find((p) => p.seat === heroSeat);
   const actor = hand.players.find((p) => p.seat === hand.toAct);
+  const me = snap.seats[heroSeat];
   return (
     <div className="action-bar waiting">
       <HandStrength snap={snap} />
+      {!hero && me && me.status !== 'active' && (
+        <div className="row wrap entry-status">
+          {me.status === 'waitingForBB' ? (
+            <>
+              <span>You'll be dealt in when the big blind reaches you.</span>
+              <button onClick={() => ctl.setHeroEntry('postToEnter')}>Post {money(snap.table.bigBlind)} instead</button>
+            </>
+          ) : (
+            <>
+              <span>You'll post {money(snap.table.bigBlind)} and come in next hand (not on the button or in the blinds).</span>
+              <button onClick={() => ctl.setHeroEntry('waitingForBB')}>Wait for the big blind</button>
+            </>
+          )}
+        </div>
+      )}
       <div className="row wrap">
         <span className="muted">
           {snap.paused ? 'Paused.' : `Waiting for ${actor?.name ?? '…'}…`}
@@ -208,7 +237,7 @@ function YourTurn({ snap, ctl, legal }: { snap: TableSnapshot; ctl: TableControl
   );
 }
 
-function HandOver({ snap, ctl, topUpTo }: { snap: TableSnapshot; ctl: TableController; topUpTo: number }) {
+function HandOver({ snap, ctl, onAddChips }: { snap: TableSnapshot; ctl: TableController; onAddChips?: () => void }) {
   const hand = snap.hand!;
   const net = hand.result?.net[snap.heroSeat];
   const heroIn = net !== undefined;
@@ -238,7 +267,6 @@ function HandOver({ snap, ctl, topUpTo }: { snap: TableSnapshot; ctl: TableContr
     .filter(([seat]) => seat !== snap.heroSeat)
     .map(([seat, amt]) => `${hand.players.find((p) => p.seat === seat)!.name} won ${money(amt)}`)
     .join(' · ');
-  const heroStack = snap.seats[snap.heroSeat]?.stack ?? 0;
   const secs = snap.autoDealAt !== null ? Math.max(0, Math.ceil((snap.autoDealAt - now) / 1000)) : null;
 
   return (
@@ -256,9 +284,7 @@ function HandOver({ snap, ctl, topUpTo }: { snap: TableSnapshot; ctl: TableContr
           Deal next hand <kbd>Space</kbd>
         </button>
         {secs !== null && <span className="muted">Next hand in {secs}s</span>}
-        {heroStack < topUpTo && (
-          <button onClick={() => ctl.topUpHero(topUpTo)}>Top up to {money(topUpTo)}</button>
-        )}
+        {onAddChips && <button onClick={onAddChips}>Add chips</button>}
       </div>
       {snap.afterNotes.length > 0 && <p className="muted small">{snap.afterNotes.join(" ")}</p>}
       {heroIn && net !== 0 && <span className="sr-only">{signedMoney(net!)}</span>}

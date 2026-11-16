@@ -271,6 +271,38 @@ button.act { min-height: 50px; font-size: 16px; font-weight: 700; border-radius:
 .stat-table { width: 100%; border-collapse: collapse; }
 .stat-table td { padding: 5px 4px; border-bottom: 1px solid var(--line); }
 
+/* ---------------- lobby, join, dialogs ---------------- */
+.lobby { max-width: 860px; }
+.lobby-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.lobby-head .brand { font-size: 20px; }
+.bankroll-card { background: var(--panel); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+.bankroll-amount { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.last-session { display: flex; gap: 10px; align-items: center; justify-content: space-between; background: var(--panel-2); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.reset-card { background: #3a2a10; border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+.table-list { display: grid; gap: 10px; margin: 8px 0 14px; }
+.table-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--panel); border-radius: 12px; padding: 12px 14px; border: 1px solid var(--line); }
+.table-card.locked { opacity: 0.55; }
+.tc-name { font-size: 18px; font-weight: 700; }
+.sit-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; padding: 0 18px; min-height: 44px; border-radius: 10px; white-space: nowrap; }
+.lock { white-space: nowrap; color: var(--muted); font-weight: 600; }
+.join-layout { display: grid; gap: 12px; width: 100%; max-width: 1100px; margin: 0 auto; padding: 12px 16px; }
+.seat.pick .plate { cursor: pointer; border: 2px dashed var(--accent); color: var(--accent); background: #00000060; font: inherit; font-size: clamp(10px, 1.2cqw, 13px); font-weight: 700; }
+.seat.pick.picked .plate { background: var(--accent); color: var(--accent-ink); border-style: solid; }
+.chips-dialog .amount-big { display: flex; align-items: center; gap: 6px; font-size: 28px; font-weight: 800; margin: 10px 0; }
+.chips-dialog .amount-big input { width: 160px; font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid #ffffff40; background: #0a120d; color: var(--text); }
+.wide-range { width: 100%; accent-color: var(--accent); height: 30px; }
+.chips-dialog .seg { margin: 8px 0; }
+.chips-dialog fieldset.entry { border: 0; padding: 0; margin: 10px 0; }
+.chips-dialog legend { color: var(--muted); margin-bottom: 4px; }
+.rake-grid { display: grid; gap: 8px; margin: 10px 0 14px; }
+.rake-grid input { width: 70px; margin: 0 4px; font: inherit; padding: 5px 7px; border-radius: 7px; border: 1px solid #ffffff38; background: #0a120d; color: var(--text); }
+.bankroll-chip { color: var(--muted); white-space: nowrap; }
+.bankroll-chip b { color: var(--text); }
+.leaving { color: var(--accent); font-weight: 600; }
+.entry-status { color: #cfe; }
+
 /* ---------------- simple pages ---------------- */
 .page { max-width: 820px; margin: 0 auto; padding: 16px; }
 .page table { width: 100%; border-collapse: collapse; margin-top: 8px; }

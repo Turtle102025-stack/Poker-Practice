@@ -12,6 +12,9 @@ interface Props {
   snap: TableSnapshot;
   onSeatClick?: (seat: number) => void;
   isTilted?: (playerId: string) => boolean;
+  /** Join screen: the seat you picked, and a handler to pick an open seat. */
+  pickSeat?: number | null;
+  onPickSeat?: (seat: number) => void;
 }
 
 const POST_LABEL: Record<string, string> = { sb: 'SB', bb: 'BB', straddle: 'Straddle', 'live-bb': 'Post' };
@@ -45,7 +48,7 @@ function lastActionLabel(hand: HandState, p: PlayerState): string | null {
   }
 }
 
-export function TableFelt({ snap, onSeatClick, isTilted }: Props) {
+export function TableFelt({ snap, onSeatClick, isTilted, pickSeat, onPickSeat }: Props) {
   const { hand, seats, heroSeat, table, settings } = snap;
   const n = table.numSeats;
   const done = hand?.phase === 'complete';
@@ -134,6 +137,8 @@ export function TableFelt({ snap, onSeatClick, isTilted }: Props) {
             showCards={!!p && (seat === heroSeat || shown.has(seat) || (done && settings.practiceMode))}
             highlightCards={highlightCards}
             onClick={onSeatClick}
+            picked={pickSeat === seat}
+            onPick={onPickSeat}
             badge={
               snap.settings.revealStyles && occ && !occ.isHero && ROSTER_BY_ID.has(occ.id)
                 ? ARCHETYPE_SHORT[ROSTER_BY_ID.get(occ.id)!.archetype] + (isTilted?.(occ.id) ? ' · tilt' : '')
@@ -168,9 +173,18 @@ interface SeatProps {
   highlightCards: Set<number>;
   onClick?: (seat: number) => void;
   badge?: string;
+  picked?: boolean;
+  onPick?: (seat: number) => void;
 }
 
-function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highlightCards, onClick, badge }: SeatProps) {
+function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highlightCards, onClick, badge, picked, onPick }: SeatProps) {
+  if (!occ && onPick) {
+    return (
+      <div className={`seat empty pick ${picked ? 'picked' : ''}`} style={style}>
+        <button className="plate" onClick={() => onPick(seat)}>{picked ? 'Your seat' : 'Sit here'}<br />Seat {seat + 1}</button>
+      </div>
+    );
+  }
   if (!occ) {
     return (
       <div className="seat empty" style={style}>
@@ -212,7 +226,13 @@ function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highli
         <div className="name">{isHero ? 'You' : occ.name}</div>
         <div className="stack">{money(stack)}</div>
         <div className="foot">
-          {player ? <span className="pos">{player.position}</span> : <span className="pos">{occ.status === 'active' ? 'Sitting out' : 'Waiting'}</span>}
+          {player ? (
+            <span className="pos">{player.position}</span>
+          ) : occ.status !== 'active' ? (
+            <span className="pos">{occ.status === 'postToEnter' ? 'Posting in' : 'Waiting for BB'}</span>
+          ) : hand ? (
+            <span className="pos">Sitting out</span>
+          ) : null}
           {done && won ? (
             <span className="tag win">+{money(won)}</span>
           ) : label && !done ? (

@@ -13,9 +13,24 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 | 1 | Poker engine, hand evaluator, tests | ✅ Done |
 | 2 | Table UI with simple bots | ✅ Done |
 | 3 | 50 player personalities, seating, tilt | ✅ Done |
-| 4 | Lobby, bankroll, buy-ins, saving progress | Next |
-| 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | |
+| 4 | Lobby, bankroll, buy-ins, saving progress | ✅ Done |
+| 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | Next |
 | 6 | Notes, stats page, practice mode, polish | |
+
+## Lobby and bankroll
+
+- You start with **$2,000**. Five tables: $1/$3 ($100–$500), $2/$5 ($200–$500),
+  $5/$10 ($400–$1,500), $10/$20 ($800, no max) and $50/$100 ($5,000, no max).
+  Tables you can't afford are shown but locked.
+- Pick an open seat and buy in; the buy-in comes out of your bankroll. Joining a game
+  in progress, you either post a big blind to come in or wait for the big blind.
+- Between hands you can add chips up to the table maximum (or up to your bankroll at
+  no-max tables). If you bust, the game waits while you rebuy (at least the minimum) or leave.
+- Leaving puts your stack back in your bankroll. If you can't afford any table and have
+  no chips in play, you're offered a fresh $2,000.
+- Rake is off by default; turn it on in the lobby (percent, cap per table, no flop no drop).
+- Everything is saved in your browser (IndexedDB) after every action. Close the page
+  mid-hand and you'll come back to the same hand with the same cards to come.
 
 ## Playing
 

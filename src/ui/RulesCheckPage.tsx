@@ -44,7 +44,7 @@ export default function RulesCheckPage() {
 
   return (
     <div className="page">
-      <a className="link" href="#/">← Back to the table</a>
+      <a className="link" href="#/">← Back</a>
       <h1>Rules check</h1>
       <p className="muted">
         Plays {SIM_HANDS.toLocaleString()} hands in your browser between random players with random (often tiny)

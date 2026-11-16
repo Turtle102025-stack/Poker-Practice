@@ -1,74 +1,23 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { AiDirector } from '../../ai/director';
-import { secureRng } from '../../engine/rng';
-import { TableController, type Occupant, type TableSettings } from '../../table/controller';
-import { Seating } from '../../table/seating';
-import { stakeById, STAKES, type Stake } from '../../table/stakes';
-import { loadSettings, saveSettings } from '../settingsStore';
+import type { ActiveTable, GameStore, StoreSnapshot } from '../../app/gameStore';
+import type { TableSettings } from '../../table/controller';
+import { ChipsDialog } from '../components/ChipsDialog';
+import { money } from '../format';
+import { saveSettings } from '../settingsStore';
 import { ActionBar } from './ActionBar';
 import { ActionLog } from './ActionLog';
 import { PlayerPanel } from './PlayerPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TableFelt } from './TableFelt';
 
-/**
- * Phase 3: you at a table of players from the 50-player pool. Until the lobby
- * and bankroll arrive in Phase 4, you sit with 100 big blinds and rebuy for free.
- */
-const STAKE_KEY = 'poker-practice.practiceStake.v1';
-
-function heroStackFor(stake: Stake): number {
-  return Math.min(stake.maxBuyIn ?? Infinity, 100 * stake.bigBlind);
-}
-
-function createTable(stake: Stake): { ctl: TableController; director: AiDirector } {
-  const rng = secureRng;
-  const seating = new Seating(stake, rng);
-  const director = new AiDirector(seating, rng);
-  const heroSeat = rng.int(10);
-  const heroStack = heroStackFor(stake);
-  let seats: Array<Occupant | null> = Array.from({ length: 10 }, () => null);
-  seats[heroSeat] = { seat: heroSeat, id: 'hero', name: 'You', stack: heroStack, status: 'active', isHero: true };
-  seats = seating.initialFill(seats);
-  const ctl = new TableController({
-    table: { id: stake.id, name: stake.name, smallBlind: stake.smallBlind, bigBlind: stake.bigBlind, numSeats: 10 },
-    heroSeat,
-    heroStack,
-    bots: seats.filter((o): o is Occupant => !!o && !o.isHero).map(({ seat, id, name, stack }) => ({ seat, id, name, stack })),
-    rebuyStack: heroStack,
-    settings: loadSettings(),
-    hooks: director,
-    rng,
-  });
-  return { ctl, director };
-}
-
-function loadStake(): Stake {
-  try {
-    return stakeById(localStorage.getItem(STAKE_KEY) ?? '1-3');
-  } catch {
-    return STAKES[0];
-  }
-}
-
-export default function TablePage() {
-  const [stake, setStake] = useState(loadStake);
-  const changeStake = (s: Stake) => {
-    try {
-      localStorage.setItem(STAKE_KEY, s.id);
-    } catch {
-      /* ignore */
-    }
-    setStake(s);
-  };
-  return <TableSession key={stake.id} stake={stake} onChangeStake={changeStake} />;
-}
-
-function TableSession({ stake, onChangeStake }: { stake: Stake; onChangeStake: (s: Stake) => void }) {
-  const [{ ctl, director }] = useState(() => createTable(stake));
+/** The table you're sitting at, with your bankroll, add-chips and leave. */
+export default function TablePage({ store, app, active }: { store: GameStore; app: StoreSnapshot; active: ActiveTable }) {
+  const { ctl, director, stake } = active;
   const snap = useSyncExternalStore(ctl.subscribe, ctl.getSnapshot);
   const [showSettings, setShowSettings] = useState(false);
   const [panelSeat, setPanelSeat] = useState<number | null>(null);
+  const [addingChips, setAddingChips] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   useEffect(() => {
     ctl.start();
@@ -81,7 +30,9 @@ function TableSession({ stake, onChangeStake }: { stake: Stake; onChangeStake: (
   };
 
   const panelOcc = panelSeat !== null ? snap.seats[panelSeat] : null;
-  const heroStack = heroStackFor(stake);
+  const addRange = store.addChipsRange();
+  const heroStack = ctl.heroStack();
+  const net = heroStack + (ctl.heroInHand() ? snap.hand?.players.find((p) => p.seat === snap.heroSeat)?.committed ?? 0 : 0) - active.boughtIn;
 
   return (
     <div className="table-page">
@@ -93,26 +44,38 @@ function TableSession({ stake, onChangeStake }: { stake: Stake; onChangeStake: (
         <div className="table-info">
           {snap.table.name} · Hand #{snap.handNo}
         </div>
+        <div className="bankroll-chip" title="Money off the table">
+          Bankroll <b>{money(app.profile.bankroll)}</b>
+          <span className="label"> · session <b className={net >= 0 ? 'pos' : 'neg'}>{net >= 0 ? '+' : ''}{money(net)}</b></span>
+        </div>
         <div className="top-actions">
           <button onClick={() => ctl.setPaused(!snap.paused)} className={snap.paused ? 'on' : ''}>
             {snap.paused ? '▶' : '❚❚'}<span className="label"> {snap.paused ? 'Resume' : 'Pause'}</span>
           </button>
           <button onClick={() => setShowSettings(true)} aria-label="Settings">⚙<span className="label"> Settings</span></button>
-          <a className="link" href="#/rules" title="Rules check">✓<span className="label"> Rules check</span></a>
+          {snap.leaveAfterHand ? (
+            <button className="on" onClick={() => ctl.cancelLeave()} title="Cancel leaving">Leaving after this hand ✕</button>
+          ) : (
+            <button onClick={() => setConfirmLeave(true)}>Leave<span className="label"> table</span></button>
+          )}
         </div>
       </header>
 
       <main className="table-layout">
         <div className="table-col">
           <TableFelt snap={snap} onSeatClick={setPanelSeat} isTilted={(id) => director.tiltOf(id) > 0.25} />
-          <ActionBar snap={snap} ctl={ctl} topUpTo={heroStack} />
+          <ActionBar
+            snap={snap}
+            ctl={ctl}
+            onAddChips={addRange ? () => setAddingChips(true) : undefined}
+            onLeave={() => setConfirmLeave(true)}
+          />
         </div>
         <aside className="log-col">
           <ActionLog hand={snap.hand} heroSeat={snap.heroSeat} handNo={snap.handNo} notices={snap.notices} afterNotes={snap.afterNotes} />
           <p className="muted small phase-note">
-            Phase 3 preview: the players are drawn from the 50-player pool and come and go as you play.
-            Click any player to see who they are. You sit with {`$${heroStack.toLocaleString('en-US')}`} and rebuy for
-            free until the lobby and bankroll arrive in Phase 4.
+            Your buy-in came out of your bankroll; leaving puts your chips back. Everything is saved as you
+            play, so you can close the page and come back to the same hand.
           </p>
         </aside>
       </main>
@@ -121,11 +84,6 @@ function TableSession({ stake, onChangeStake }: { stake: Stake; onChangeStake: (
         <SettingsPanel
           settings={snap.settings}
           bigBlind={snap.table.bigBlind}
-          stake={stake}
-          onChangeStake={(s) => {
-            setShowSettings(false);
-            if (s.id !== stake.id) onChangeStake(s);
-          }}
           onChange={changeSettings}
           onClose={() => setShowSettings(false)}
         />
@@ -138,6 +96,44 @@ function TableSession({ stake, onChangeStake }: { stake: Stake; onChangeStake: (
           tilted={director.tiltOf(panelOcc.id) > 0.25}
           onClose={() => setPanelSeat(null)}
         />
+      )}
+      {addingChips && addRange && (
+        <ChipsDialog
+          title={heroStack === 0 ? 'Rebuy' : 'Add chips'}
+          subtitle={
+            stake.maxBuyIn
+              ? `You have ${money(heroStack)} on the table. The table maximum is ${money(stake.maxBuyIn)}.`
+              : `You have ${money(heroStack)} on the table. This table has no maximum.`
+          }
+          min={addRange.min}
+          max={addRange.max}
+          initial={heroStack === 0 ? Math.min(addRange.max, Math.max(addRange.min, 100 * stake.bigBlind)) : addRange.max}
+          bankroll={app.profile.bankroll}
+          bigBlind={stake.bigBlind}
+          confirmLabel={(a) => `Add ${money(a)}`}
+          onConfirm={async (amount) => {
+            const err = await store.addChips(amount);
+            if (!err) setAddingChips(false);
+            return err;
+          }}
+          onCancel={() => setAddingChips(false)}
+        />
+      )}
+      {confirmLeave && (
+        <div className="settings-backdrop" onClick={() => setConfirmLeave(false)}>
+          <div className="settings" role="dialog" aria-label="Leave the table" onClick={(e) => e.stopPropagation()}>
+            <h2>Leave the table?</h2>
+            <p>
+              {ctl.heroInHand()
+                ? `You're in a hand. You'll leave as soon as it's over and take your chips with you.`
+                : `You'll take ${money(heroStack)} back to your bankroll.`}
+            </p>
+            <div className="row wrap">
+              <button className="act raise" onClick={() => { setConfirmLeave(false); store.leave(); }}>Leave table</button>
+              <button onClick={() => setConfirmLeave(false)}>Stay</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

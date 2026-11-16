@@ -2,10 +2,10 @@ import type { Rng } from '../engine/rng';
 import type { HandState, PlayerAction } from '../engine/types';
 import type { PlayerView } from '../engine/view';
 import type { Occupant, TableHooks } from '../table/controller';
-import type { Seating } from '../table/seating';
+import type { Seating, SeatingState } from '../table/seating';
 import type { StyleParams } from './archetypes';
 import { decide } from './brain';
-import { PublicStats } from './publicStats';
+import { PublicStats, type StatCounts } from './publicStats';
 import { personalStyle, ROSTER_BY_ID } from './roster';
 
 /**
@@ -24,6 +24,12 @@ const TELLS = [
   '{name} goes quiet and glares at the dealer.',
 ];
 
+export interface DirectorState {
+  tilt: Array<[string, number]>;
+  stats: Array<[string, StatCounts]>;
+  seating: SeatingState;
+}
+
 export class AiDirector implements TableHooks {
   readonly stats = new PublicStats();
   private tilt = new Map<string, number>();
@@ -33,6 +39,17 @@ export class AiDirector implements TableHooks {
     readonly seating: Seating,
     private readonly rng: Rng,
   ) {}
+
+  exportState(): DirectorState {
+    return { tilt: [...this.tilt], stats: [...this.stats.counts], seating: this.seating.exportState() };
+  }
+
+  importState(s: DirectorState): void {
+    this.tilt = new Map(s.tilt);
+    this.stats.counts.clear();
+    for (const [id, c] of s.stats) this.stats.counts.set(id, { ...c });
+    this.seating.importState(s.seating);
+  }
 
   style(id: string): StyleParams {
     let s = this.styles.get(id);

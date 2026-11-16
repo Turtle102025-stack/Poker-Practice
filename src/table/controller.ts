@@ -3,7 +3,7 @@ import { shuffledDeck } from '../engine/deck';
 import { applyAction, startHand } from '../engine/hand';
 import { secureRng, type Rng } from '../engine/rng';
 import { NEW_BUTTON_STATE, planNextHand, type ButtonState, type SeatStatus } from '../engine/table';
-import { IllegalActionError, type HandConfig, type HandState, type PlayerAction } from '../engine/types';
+import { IllegalActionError, type HandConfig, type HandState, type PlayerAction, type RakeConfig } from '../engine/types';
 import { getPlayerView, type PlayerView } from '../engine/view';
 
 /**
@@ -55,6 +55,8 @@ export interface TableInfo {
   smallBlind: number;
   bigBlind: number;
   numSeats: number;
+  /** Rake taken from each pot (off when missing). */
+  rake?: RakeConfig;
 }
 
 export interface Occupant {
@@ -87,6 +89,27 @@ export interface TableSnapshot {
   /** Things that happened at the end of this hand (reactions to big pots). */
   afterNotes: string[];
   settings: TableSettings;
+  /** You are out of chips: no more hands until you add chips or leave. */
+  heroBusted: boolean;
+  /** You asked to leave once the current hand is over. */
+  leaveAfterHand: boolean;
+  /** You have left; the table no longer runs. */
+  closed: boolean;
+}
+
+/** Everything needed to rebuild a table exactly where it was (saved after every action). */
+export interface ControllerState {
+  table: TableInfo;
+  seats: Array<Occupant | null>;
+  heroSeat: number;
+  hand: HandState | null;
+  handNo: number;
+  stage: Stage;
+  notices: string[];
+  afterNotes: string[];
+  buttonState: ButtonState;
+  heroBusted: boolean;
+  leaveAfterHand: boolean;
 }
 
 /** How computer players are run. The default is the simple Phase 2 bot. */
@@ -139,8 +162,18 @@ export interface ControllerOptions {
   heroStack: number;
   /** Computer players already seated. */
   bots: Array<{ seat: number; id: string; name: string; stack: number }>;
-  /** Stack you rebuy for when you bust (free until the bankroll arrives in Phase 4). */
-  rebuyStack: number;
+  /** If set, you rebuy for this much automatically (free) when you bust. Used by tests. */
+  rebuyStack?: number;
+  /** How you join: dealt in now, waiting for the big blind, or posting to come in. */
+  heroStatus?: SeatStatus;
+  /** Where the button and blinds were last hand (to join a game already in progress). */
+  buttonState?: ButtonState;
+  /** Rebuild a saved table instead of starting fresh. */
+  restore?: ControllerState;
+  /** Called when you leave the table, with the chips you take with you. */
+  onLeave?: (stack: number) => void;
+  /** Called after every completed hand. */
+  onHandComplete?: (hand: HandState) => void;
   settings?: Partial<TableSettings>;
   hooks?: TableHooks;
   /** Shortcut for tests: a decision function for simple bots. */
@@ -157,33 +190,135 @@ export class TableController {
   private readonly hooks: TableHooks;
   private readonly rng: Rng;
   private readonly sched: Scheduler;
-  private readonly rebuyStack: number;
+  private readonly rebuyStack: number | undefined;
+  private readonly onLeave?: (stack: number) => void;
+  private readonly onHandComplete?: (hand: HandState) => void;
+  private restored = false;
 
   constructor(opts: ControllerOptions) {
     this.rng = opts.rng ?? secureRng;
-    this.hooks = opts.hooks ?? simpleHooks(opts.rebuyStack, this.rng, opts.brain);
+    this.hooks = opts.hooks ?? simpleHooks(opts.rebuyStack ?? 0, this.rng, opts.brain);
     this.sched = opts.scheduler ?? realScheduler;
     this.rebuyStack = opts.rebuyStack;
+    this.onLeave = opts.onLeave;
+    this.onHandComplete = opts.onHandComplete;
+    const base = {
+      autoDealAt: null,
+      fastForward: false,
+      paused: false,
+      actingSince: null,
+      settings: { ...DEFAULT_SETTINGS, ...opts.settings },
+      closed: false,
+    };
+    if (opts.restore) {
+      const r = opts.restore;
+      this.restored = true;
+      this.buttonState = r.buttonState;
+      this.snap = {
+        ...base,
+        table: r.table, seats: r.seats, heroSeat: r.heroSeat, hand: r.hand, handNo: r.handNo, stage: r.stage,
+        notices: r.notices, afterNotes: r.afterNotes, heroBusted: r.heroBusted, leaveAfterHand: r.leaveAfterHand,
+      };
+      return;
+    }
+    if (opts.buttonState) this.buttonState = opts.buttonState;
     const seats: Array<Occupant | null> = Array.from({ length: opts.table.numSeats }, () => null);
     seats[opts.heroSeat] = {
-      seat: opts.heroSeat, id: 'hero', name: opts.heroName ?? 'You', stack: opts.heroStack, status: 'active', isHero: true,
+      seat: opts.heroSeat, id: 'hero', name: opts.heroName ?? 'You', stack: opts.heroStack,
+      status: opts.heroStatus ?? 'active', isHero: true,
     };
     for (const b of opts.bots) seats[b.seat] = { ...b, status: 'active', isHero: false };
     this.snap = {
+      ...base,
       table: opts.table,
       seats,
       heroSeat: opts.heroSeat,
       hand: null,
       handNo: 0,
       stage: 'hand-over',
-      autoDealAt: null,
-      fastForward: false,
-      paused: false,
-      actingSince: null,
       notices: [],
       afterNotes: [],
-      settings: { ...DEFAULT_SETTINGS, ...opts.settings },
+      heroBusted: false,
+      leaveAfterHand: false,
     };
+  }
+
+  /** The state to save so the table can be rebuilt exactly (see `restore`). */
+  exportState(): ControllerState {
+    const s = this.snap;
+    return {
+      table: s.table, seats: s.seats, heroSeat: s.heroSeat, hand: s.hand, handNo: s.handNo, stage: s.stage,
+      notices: s.notices, afterNotes: s.afterNotes, buttonState: this.buttonState, heroBusted: s.heroBusted,
+      leaveAfterHand: s.leaveAfterHand,
+    };
+  }
+
+  /** Your chips right now (behind, not counting chips already in the pot). */
+  heroStack(): number {
+    const { hand, heroSeat, seats } = this.snap;
+    const inHand = hand && hand.phase !== 'complete' ? hand.players.find((p) => p.seat === heroSeat) : undefined;
+    return inHand ? inHand.stack : seats[heroSeat]?.stack ?? 0;
+  }
+
+  /** Whether you are in the current, unfinished hand (and haven't folded). */
+  heroInHand(): boolean {
+    const { hand, heroSeat } = this.snap;
+    if (!hand || hand.phase === 'complete') return false;
+    const p = hand.players.find((x) => x.seat === heroSeat);
+    return !!p && !p.folded;
+  }
+
+  /** Chips can be added only when you're not in a hand. */
+  canAddChips(): boolean {
+    const { hand, heroSeat, closed } = this.snap;
+    if (closed) return false;
+    if (!hand || hand.phase === 'complete') return true;
+    return !hand.players.some((p) => p.seat === heroSeat);
+  }
+
+  /** Adds chips to your stack (rebuy or top-up). The caller checks limits and the bankroll. */
+  addHeroChips(amount: number): void {
+    if (!this.canAddChips() || amount <= 0) return;
+    const seats = this.snap.seats.slice();
+    const hero = seats[this.snap.heroSeat]!;
+    seats[this.snap.heroSeat] = { ...hero, stack: hero.stack + amount };
+    const wasBusted = this.snap.heroBusted;
+    this.update({ seats, heroBusted: false });
+    if (wasBusted && this.snap.stage === 'hand-over') this.scheduleAutoDeal(false);
+  }
+
+  /** Leave now if you're not in a hand, otherwise as soon as the hand ends. */
+  requestLeave(): void {
+    if (this.snap.closed) return;
+    if (this.heroInHand()) {
+      this.update({ leaveAfterHand: true });
+      return;
+    }
+    this.leaveNow();
+  }
+
+  cancelLeave(): void {
+    this.update({ leaveAfterHand: false });
+  }
+
+  /** While waiting to come in: post a big blind instead, or go back to waiting for it. */
+  setHeroEntry(status: 'waitingForBB' | 'postToEnter'): void {
+    const seats = this.snap.seats.slice();
+    const hero = seats[this.snap.heroSeat]!;
+    if (hero.status === 'active') return;
+    seats[this.snap.heroSeat] = { ...hero, status };
+    this.update({ seats });
+  }
+
+  setRake(rake: RakeConfig | undefined): void {
+    this.update({ table: { ...this.snap.table, rake } });
+  }
+
+  private leaveNow(): void {
+    const stack = this.heroStack();
+    this.clearTimer();
+    this.update({ closed: true, leaveAfterHand: false, autoDealAt: null });
+    this.onLeave?.(stack);
   }
 
   /* ---------------- subscription (for React's useSyncExternalStore) -------------- */
@@ -204,11 +339,17 @@ export class TableController {
 
   /** Deals the first hand, or re-arms timers after suspend(). Safe to call repeatedly. */
   start(): void {
+    if (this.snap.closed) return;
     if (!this.snap.hand) {
-      this.deal();
+      if (!this.snap.heroBusted) this.deal();
       return;
     }
     if (this.timer !== null) return;
+    if (this.restored) {
+      this.restored = false;
+      if (this.snap.stage === 'in-hand') this.step();
+      return;
+    }
     if (this.snap.stage === 'in-hand') this.step();
     else if (this.snap.autoDealAt !== null) {
       const wait = Math.max(0, this.snap.autoDealAt - this.sched.now());
@@ -223,7 +364,7 @@ export class TableController {
 
   /** Deals the next hand now (between hands only). */
   dealNow(): void {
-    if (this.snap.stage === 'in-hand') return;
+    if (this.snap.stage === 'in-hand' || this.snap.closed) return;
     this.deal();
   }
 
@@ -307,6 +448,11 @@ export class TableController {
     const seats = churn.seats.slice();
     const hero = seats[this.snap.heroSeat];
     if (hero && hero.stack === 0) {
+      if (this.rebuyStack === undefined) {
+        // Out of chips: wait for you to rebuy or leave.
+        this.update({ seats, notices, afterNotes: [], heroBusted: true, autoDealAt: null });
+        return;
+      }
       seats[this.snap.heroSeat] = { ...hero, stack: this.rebuyStack };
       notices.push(`You rebought for $${this.rebuyStack}.`);
     }
@@ -353,6 +499,7 @@ export class TableController {
       bbSeat: plan.bbSeat,
       livePosters: plan.livePosters,
       straddleSeat,
+      rake: this.snap.table.rake,
     };
     const hand = startHand(config, shuffledDeck(this.rng));
     this.update({ seats, hand, handNo, stage: 'in-hand', autoDealAt: null, fastForward: false, notices, afterNotes: [] });
@@ -418,6 +565,11 @@ export class TableController {
     }
     const afterNotes = this.hooks.afterHand(hand);
     this.update({ seats, stage: 'hand-over', actingSince: null, fastForward: false, afterNotes });
+    this.onHandComplete?.(hand);
+    if (this.snap.leaveAfterHand) {
+      this.leaveNow();
+      return;
+    }
     const hero = hand.players.find((p) => p.seat === this.snap.heroSeat);
     const heroAtShowdown = !!hero && !hero.folded && hand.result!.wentToShowdown;
     this.scheduleAutoDeal(heroAtShowdown);
@@ -425,6 +577,7 @@ export class TableController {
 
   private scheduleAutoDeal(heroAtShowdown: boolean): void {
     const { settings, paused } = this.snap;
+    if (this.snap.closed) return;
     if (paused || settings.autoDealMs === null || (heroAtShowdown && settings.pauseAfterMyShowdown)) {
       this.update({ autoDealAt: null });
       return;
