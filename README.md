@@ -12,8 +12,8 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 |---|---|---|
 | 1 | Poker engine, hand evaluator, tests | ✅ Done |
 | 2 | Table UI with simple bots | ✅ Done |
-| 3 | 50 player personalities, seating, tilt | Next |
-| 4 | Lobby, bankroll, buy-ins, saving progress | |
+| 3 | 50 player personalities, seating, tilt | ✅ Done |
+| 4 | Lobby, bankroll, buy-ins, saving progress | Next |
 | 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | |
 | 6 | Notes, stats page, practice mode, polish | |
 
@@ -28,6 +28,40 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
   gun, four-color deck, show your current hand.
 - **Pause** stops the computer players; **Fast-forward** finishes a hand you're out of.
 
+## The computer players
+
+50 players, each with a name, what you'd notice about them at the table, a buy-in
+habit, how long they usually stay, and a hidden style:
+
+| Style | Count | Measured VPIP / PFR |
+|---|---|---|
+| Nit | 6 | ~9% / 7% |
+| Semi-nit | 6 | ~14% / 10% |
+| Tight passive | 6 | ~17% / 3.5% |
+| Loose passive rec | 9 | ~43% / 4% |
+| Loose aggressive rec | 7 | ~50% / 22% |
+| Overly aggressive reg | 5 | ~25% / 22% (3-bets ~12%) |
+| Good reg | 5 | ~21% / 18% |
+| Short stacker | 6 | ~14% / 12% (mostly all-in or fold) |
+
+- Each style is a set of parameters (preflop ranges by position, limping, 3-betting,
+  live-style bet sizes, c-bet and barrel frequencies, calling thresholds, stickiness,
+  bluffing, slowplaying, folding to scare cards, tilt sensitivity); each player varies
+  around their style, and decisions include randomness.
+- **Tilt:** after losing a big pot, players loosen up and bluff more for a while,
+  scaled by how tilt-prone they are, and you may see them react at the table.
+- **Good regulars** keep the same public stats you could (VPIP, PFR, fold to c-bet…)
+  and adjust: isolating limpers, value-betting thinner against callers, bluffing them less.
+- **No peeking:** computer players only receive their own view of the hand (their cards,
+  the board, the betting, stacks). A test checks that changing opponents' hidden cards
+  never changes a decision.
+- **Seating:** you sit with 6–9 others drawn from the pool, weighted by the stakes each
+  player likes (lots of recreational players and short stackers at $1/$3 and $2/$5, more
+  regulars higher up). Players rebuy, top up, cash out, and new ones arrive and wait for
+  the big blind or post to come in.
+- `npm run calibrate` plays tens of thousands of hands between the computer players and
+  prints each style's measured stats and win rate; a smaller run is part of the tests.
+
 ## How it's checked
 
 Every push to `main` runs on GitHub Actions (see the **Actions** tab):
@@ -38,7 +72,8 @@ Every push to `main` runs on GitHub Actions (see the **Actions** tab):
 3. A 50,000-hand rules simulation with random stacks, random legal and illegal
    actions, and players coming and going; every showdown is re-checked with a
    second, independent hand evaluator
-4. Build, then publish to GitHub Pages
+4. A 30,000-hand run of the computer players, printing each style's measured stats
+5. Build, then publish to GitHub Pages
 
 If any step fails, the site is not updated.
 
@@ -69,6 +104,7 @@ npm install
 npm run dev        # local dev server
 npm test           # unit tests
 npm run sim -- 100000   # rules simulation
+npm run calibrate -- 50000   # measure the computer players' styles
 npm run play       # play in the terminal
 npm run build      # production build into dist/
 ```

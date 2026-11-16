@@ -1,8 +1,11 @@
 import type { AiSpeed, TableSettings } from '../../table/controller';
+import { STAKES, type Stake } from '../../table/stakes';
 
 interface Props {
   settings: TableSettings;
   bigBlind: number;
+  stake?: Stake;
+  onChangeStake?: (s: Stake) => void;
   onChange: (patch: Partial<TableSettings>) => void;
   onClose: () => void;
 }
@@ -21,7 +24,7 @@ const DEALS: Array<[number | null, string]> = [
   [1000, 'After 1 second'],
 ];
 
-export function SettingsPanel({ settings, bigBlind, onChange, onClose }: Props) {
+export function SettingsPanel({ settings, bigBlind, stake, onChangeStake, onChange, onClose }: Props) {
   const toggle = (key: keyof TableSettings, label: string, hint?: string) => (
     <label className="toggle">
       <input type="checkbox" checked={settings[key] as boolean} onChange={(e) => onChange({ [key]: e.target.checked })} />
@@ -57,10 +60,24 @@ export function SettingsPanel({ settings, bigBlind, onChange, onClose }: Props) 
           </div>
         </fieldset>
 
+        {stake && onChangeStake && (
+          <fieldset>
+            <legend>Practice table (until the lobby arrives in Phase 4)</legend>
+            <div className="seg">
+              {STAKES.map((s) => (
+                <button key={s.id} className={s.id === stake.id ? 'on' : ''} onClick={() => onChangeStake(s)}>{s.label}</button>
+              ))}
+            </div>
+            <small className="muted">Switching starts a new table with different players.</small>
+          </fieldset>
+        )}
+
         {toggle('pauseAfterMyShowdown', 'Wait for me after showdowns I play', 'So you can look at the cards')}
         {toggle('autoFastForward', 'Fast-forward after I fold', 'Skip to the end of hands you are out of')}
         {toggle('practiceMode', 'Practice mode: show all hole cards after each hand')}
         {toggle('straddle', `Straddle ($${2 * bigBlind}) when I'm under the gun`)}
+        {toggle('aiStraddles', 'Other players may straddle')}
+        {toggle('revealStyles', "Reveal players' true styles", "Shows each player's style on their seat, to check your reads")}
         {toggle('showHandStrength', 'Show my current hand (e.g. "two pair")')}
         {toggle('fourColorDeck', 'Four-color deck', 'Clubs green, diamonds blue')}
       </div>

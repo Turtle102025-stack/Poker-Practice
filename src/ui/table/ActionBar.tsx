@@ -260,7 +260,7 @@ function HandOver({ snap, ctl, topUpTo }: { snap: TableSnapshot; ctl: TableContr
           <button onClick={() => ctl.topUpHero(topUpTo)}>Top up to {money(topUpTo)}</button>
         )}
       </div>
-      {snap.notices.length > 0 && <p className="muted small">{snap.notices.join(' ')}</p>}
+      {snap.afterNotes.length > 0 && <p className="muted small">{snap.afterNotes.join(" ")}</p>}
       {heroIn && net !== 0 && <span className="sr-only">{signedMoney(net!)}</span>}
     </div>
   );

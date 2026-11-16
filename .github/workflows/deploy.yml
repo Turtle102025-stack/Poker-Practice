@@ -33,6 +33,8 @@ jobs:
         run: npm test
       - name: Rules simulation (50,000 hands)
         run: npm run sim -- 50000 1
+      - name: Computer player styles (30,000 hands)
+        run: npm run calibrate -- 30000 1
       - name: Build site
         run: npx vite build
       - uses: actions/configure-pages@v6

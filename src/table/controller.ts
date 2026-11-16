@@ -28,6 +28,10 @@ export interface TableSettings {
   practiceMode: boolean;
   /** Post a straddle when I'm under the gun. */
   straddle: boolean;
+  /** Computer players may straddle. */
+  aiStraddles: boolean;
+  /** Show each player's true style on their seat (to check your reads). */
+  revealStyles: boolean;
   fourColorDeck: boolean;
   showHandStrength: boolean;
 }
@@ -39,6 +43,8 @@ export const DEFAULT_SETTINGS: TableSettings = {
   autoFastForward: false,
   practiceMode: true,
   straddle: false,
+  aiStraddles: true,
+  revealStyles: false,
   fourColorDeck: false,
   showHandStrength: true,
 };
@@ -53,6 +59,7 @@ export interface TableInfo {
 
 export interface Occupant {
   seat: number;
+  /** Player id ('hero' for you, a roster id for computer players). */
   id: string;
   name: string;
   stack: number;
@@ -75,8 +82,21 @@ export interface TableSnapshot {
   paused: boolean;
   /** When the current player started thinking (for the timer bar). */
   actingSince: number | null;
+  /** Table news since the last hand: arrivals, departures, rebuys. */
   notices: string[];
+  /** Things that happened at the end of this hand (reactions to big pots). */
+  afterNotes: string[];
   settings: TableSettings;
+}
+
+/** How computer players are run. The default is the simple Phase 2 bot. */
+export interface TableHooks {
+  decide(occ: Occupant, view: PlayerView): PlayerAction;
+  wantsStraddle(occ: Occupant): boolean;
+  /** Rebuys, top-ups, departures and arrivals before the next hand. */
+  betweenHands(seats: Array<Occupant | null>, handNo: number): { seats: Array<Occupant | null>; notices: string[] };
+  /** Called when a hand finishes; returns notes to show. */
+  afterHand(hand: HandState): string[];
 }
 
 /** A computer player's decision function. Receives only its own view of the hand. */
@@ -94,15 +114,36 @@ const realScheduler: Scheduler = {
   now: () => Date.now(),
 };
 
+/** Simple bots with free rebuys and no table changes (Phase 2 behaviour, used in tests). */
+export function simpleHooks(rebuyStack: number, rng: Rng, brain: BotBrain = basicBotDecide): TableHooks {
+  return {
+    decide: (_occ, view) => brain(view, rng),
+    wantsStraddle: () => false,
+    betweenHands: (seats) => {
+      const notices: string[] = [];
+      const out = seats.map((o) => {
+        if (!o || o.isHero || o.stack > 0) return o;
+        notices.push(`${o.name} rebought for $${rebuyStack}.`);
+        return { ...o, stack: rebuyStack };
+      });
+      return { seats: out, notices };
+    },
+    afterHand: () => [],
+  };
+}
+
 export interface ControllerOptions {
   table: TableInfo;
   heroSeat: number;
   heroName?: string;
   heroStack: number;
+  /** Computer players already seated. */
   bots: Array<{ seat: number; id: string; name: string; stack: number }>;
-  /** Stack a busted player rebuys for (Phase 2: free rebuys). */
+  /** Stack you rebuy for when you bust (free until the bankroll arrives in Phase 4). */
   rebuyStack: number;
   settings?: Partial<TableSettings>;
+  hooks?: TableHooks;
+  /** Shortcut for tests: a decision function for simple bots. */
   brain?: BotBrain;
   rng?: Rng;
   scheduler?: Scheduler;
@@ -113,14 +154,14 @@ export class TableController {
   private listeners = new Set<() => void>();
   private timer: unknown = null;
   private buttonState: ButtonState = NEW_BUTTON_STATE;
-  private readonly brain: BotBrain;
+  private readonly hooks: TableHooks;
   private readonly rng: Rng;
   private readonly sched: Scheduler;
   private readonly rebuyStack: number;
 
   constructor(opts: ControllerOptions) {
-    this.brain = opts.brain ?? basicBotDecide;
     this.rng = opts.rng ?? secureRng;
+    this.hooks = opts.hooks ?? simpleHooks(opts.rebuyStack, this.rng, opts.brain);
     this.sched = opts.scheduler ?? realScheduler;
     this.rebuyStack = opts.rebuyStack;
     const seats: Array<Occupant | null> = Array.from({ length: opts.table.numSeats }, () => null);
@@ -140,6 +181,7 @@ export class TableController {
       paused: false,
       actingSince: null,
       notices: [],
+      afterNotes: [],
       settings: { ...DEFAULT_SETTINGS, ...opts.settings },
     };
   }
@@ -231,7 +273,7 @@ export class TableController {
     const hero = seats[this.snap.heroSeat]!;
     if (hero.stack >= max) return;
     seats[this.snap.heroSeat] = { ...hero, stack: max };
-    this.update({ seats, notices: [...this.snap.notices, `You topped up to $${max}.`] });
+    this.update({ seats, afterNotes: [...this.snap.afterNotes, `You topped up to $${max.toLocaleString('en-US')}.`] });
   }
 
   destroy(): void {
@@ -256,15 +298,18 @@ export class TableController {
 
   private deal(): void {
     this.clearTimer();
-    const notices: string[] = [];
     const bb = this.snap.table.bigBlind;
+    const notices = [...this.snap.afterNotes];
 
-    // Busted players rebuy (free in Phase 2).
-    const seats = this.snap.seats.map((o) => {
-      if (!o || o.stack > 0) return o;
-      notices.push(o.isHero ? `You rebought for $${this.rebuyStack}.` : `${o.name} rebought for $${this.rebuyStack}.`);
-      return { ...o, stack: this.rebuyStack };
-    });
+    // Table changes, then your free rebuy if you busted.
+    const churn = this.hooks.betweenHands(this.snap.seats, this.snap.handNo);
+    notices.push(...churn.notices);
+    const seats = churn.seats.slice();
+    const hero = seats[this.snap.heroSeat];
+    if (hero && hero.stack === 0) {
+      seats[this.snap.heroSeat] = { ...hero, stack: this.rebuyStack };
+      notices.push(`You rebought for $${this.rebuyStack}.`);
+    }
 
     const present = seats.filter((o): o is Occupant => !!o);
     const plan = planNextHand(
@@ -274,19 +319,22 @@ export class TableController {
       this.rng,
     );
     if (!plan) {
-      this.update({ seats, notices: [...notices, 'Waiting for more players.'], stage: 'hand-over', hand: null });
+      this.update({ seats, notices: [...notices, 'Waiting for more players.'], afterNotes: [], stage: 'hand-over', hand: null });
+      this.later(() => this.deal(), 1500);
       return;
     }
     this.buttonState = plan.next;
     for (const seat of plan.entering) seats[seat] = { ...seats[seat]!, status: 'active' };
 
-    // Your straddle, when you're under the gun.
+    // Straddle by whoever is under the gun, if they want to.
     let straddleSeat: number | null = null;
-    const hero = seats[this.snap.heroSeat];
-    if (this.snap.settings.straddle && hero && plan.dealtIn.length >= 4) {
+    if (plan.dealtIn.length >= 4) {
       const afterBB = [...plan.dealtIn.filter((x) => x > plan.bbSeat), ...plan.dealtIn.filter((x) => x <= plan.bbSeat)];
-      if (afterBB[0] === hero.seat && !plan.livePosters.includes(hero.seat) && hero.stack > 2 * bb) {
-        straddleSeat = hero.seat;
+      const utg = seats[afterBB[0]]!;
+      const eligible = !plan.livePosters.includes(utg.seat) && utg.stack > 2 * bb;
+      if (eligible) {
+        if (utg.isHero && this.snap.settings.straddle) straddleSeat = utg.seat;
+        else if (!utg.isHero && this.snap.settings.aiStraddles && this.hooks.wantsStraddle(utg)) straddleSeat = utg.seat;
       }
     }
 
@@ -307,7 +355,7 @@ export class TableController {
       straddleSeat,
     };
     const hand = startHand(config, shuffledDeck(this.rng));
-    this.update({ seats, hand, handNo, stage: 'in-hand', autoDealAt: null, fastForward: false, notices });
+    this.update({ seats, hand, handNo, stage: 'in-hand', autoDealAt: null, fastForward: false, notices, afterNotes: [] });
     this.step();
   }
 
@@ -329,22 +377,31 @@ export class TableController {
       this.clearTimer();
       return;
     }
-    const base = fastForward ? FAST_FORWARD_MS : AI_DELAY_MS[settings.aiSpeed];
-    const delay = fastForward ? base : Math.round(base * (0.7 + 0.6 * this.rng.float()));
+    // The computer player decides now and "thinks" for a realistic time before acting.
+    const seat = hand.toAct!;
+    const view = getPlayerView(hand, seat);
+    let action: PlayerAction;
+    try {
+      action = this.hooks.decide(this.snap.seats[seat]!, view);
+    } catch (e) {
+      console.error('Bot error', e);
+      action = view.legal!.canCheck ? { type: 'check' } : { type: 'fold' };
+    }
+    const base = AI_DELAY_MS[settings.aiSpeed] * thinkFactor(action, view);
+    const delay = fastForward ? FAST_FORWARD_MS : Math.round(base * (0.7 + 0.6 * this.rng.float()));
     this.update({ actingSince: now });
-    this.later(() => this.botAct(), delay);
+    this.later(() => this.botAct(seat, action), delay);
   }
 
-  private botAct(): void {
+  private botAct(seat: number, action: PlayerAction): void {
     const hand = this.snap.hand;
-    if (!hand || hand.phase === 'complete' || hand.toAct === null || hand.toAct === this.snap.heroSeat) return;
-    const seat = hand.toAct;
+    if (!hand || hand.phase === 'complete' || hand.toAct !== seat) return;
     let next: HandState;
     try {
-      next = applyAction(hand, seat, this.brain(getPlayerView(hand, seat), this.rng));
+      next = applyAction(hand, seat, action);
     } catch (e) {
-      // A bot should never send an illegal action; if one does, it checks or folds.
-      console.error('Bot error', e);
+      // A computer player should never send an illegal action; if one does, it checks or folds.
+      console.error('Illegal bot action', action, e);
       const legal = getPlayerView(hand, seat).legal!;
       next = applyAction(hand, seat, legal.canCheck ? { type: 'check' } : { type: 'fold' });
     }
@@ -359,7 +416,8 @@ export class TableController {
       const o = seats[p.seat];
       if (o) seats[p.seat] = { ...o, stack: p.stack };
     }
-    this.update({ seats, stage: 'hand-over', actingSince: null, fastForward: false });
+    const afterNotes = this.hooks.afterHand(hand);
+    this.update({ seats, stage: 'hand-over', actingSince: null, fastForward: false, afterNotes });
     const hero = hand.players.find((p) => p.seat === this.snap.heroSeat);
     const heroAtShowdown = !!hero && !hero.folded && hand.result!.wentToShowdown;
     this.scheduleAutoDeal(heroAtShowdown);
@@ -374,4 +432,15 @@ export class TableController {
     this.update({ autoDealAt: this.sched.now() + settings.autoDealMs });
     this.later(() => this.deal(), settings.autoDealMs);
   }
+}
+
+/** Quick folds and checks, longer thought for big bets and all-ins. */
+function thinkFactor(action: PlayerAction, view: PlayerView): number {
+  const legal = view.legal!;
+  const me = view.players.find((p) => p.seat === view.seat)!;
+  if (action.type === 'allin' || legal.callAmount >= 0.4 * (me.stack + me.committed)) return 1.9;
+  if (action.type === 'fold') return view.board.length === 0 ? 0.55 : 0.9;
+  if (action.type === 'check') return 0.65;
+  if (action.type === 'call') return 1;
+  return 1.25;
 }

@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "sim": "tsx scripts/simulate.ts",
-    "play": "tsx scripts/play-cli.ts"
+    "play": "tsx scripts/play-cli.ts",
+    "calibrate": "tsx scripts/calibrate.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

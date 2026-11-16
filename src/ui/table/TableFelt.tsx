@@ -1,4 +1,6 @@
 import type { CSSProperties } from 'react';
+import { ARCHETYPE_SHORT } from '../../ai/archetypes';
+import { ROSTER_BY_ID } from '../../ai/roster';
 import { bestFiveCards } from '../../engine/evaluator';
 import { currentPots } from '../../engine/hand';
 import type { BetEvent, HandState, PlayerState } from '../../engine/types';
@@ -9,6 +11,7 @@ import { money } from '../format';
 interface Props {
   snap: TableSnapshot;
   onSeatClick?: (seat: number) => void;
+  isTilted?: (playerId: string) => boolean;
 }
 
 const POST_LABEL: Record<string, string> = { sb: 'SB', bb: 'BB', straddle: 'Straddle', 'live-bb': 'Post' };
@@ -42,7 +45,7 @@ function lastActionLabel(hand: HandState, p: PlayerState): string | null {
   }
 }
 
-export function TableFelt({ snap, onSeatClick }: Props) {
+export function TableFelt({ snap, onSeatClick, isTilted }: Props) {
   const { hand, seats, heroSeat, table, settings } = snap;
   const n = table.numSeats;
   const done = hand?.phase === 'complete';
@@ -131,6 +134,11 @@ export function TableFelt({ snap, onSeatClick }: Props) {
             showCards={!!p && (seat === heroSeat || shown.has(seat) || (done && settings.practiceMode))}
             highlightCards={highlightCards}
             onClick={onSeatClick}
+            badge={
+              snap.settings.revealStyles && occ && !occ.isHero && ROSTER_BY_ID.has(occ.id)
+                ? ARCHETYPE_SHORT[ROSTER_BY_ID.get(occ.id)!.archetype] + (isTilted?.(occ.id) ? ' · tilt' : '')
+                : undefined
+            }
           />
         );
       })}
@@ -159,9 +167,10 @@ interface SeatProps {
   showCards: boolean;
   highlightCards: Set<number>;
   onClick?: (seat: number) => void;
+  badge?: string;
 }
 
-function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highlightCards, onClick }: SeatProps) {
+function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highlightCards, onClick, badge }: SeatProps) {
   if (!occ) {
     return (
       <div className="seat empty" style={style}>
@@ -210,6 +219,7 @@ function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highli
             <span className={`tag ${tagClass}`}>{label}</span>
           ) : null}
         </div>
+        {badge && <div className="badge">{badge}</div>}
         {acting && <div className="think" key={`${hand?.events.length}`} />}
       </div>
     </div>
