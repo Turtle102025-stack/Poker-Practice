@@ -1,6 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ActiveTable, GameStore, StoreSnapshot } from '../../app/gameStore';
 import type { TableSettings } from '../../table/controller';
+import { copyText } from '../../history/files';
+import { toPokerStars } from '../../history/pokerstars';
 import { ChipsDialog } from '../components/ChipsDialog';
 import { money } from '../format';
 import { saveSettings } from '../settingsStore';
@@ -53,6 +55,7 @@ export default function TablePage({ store, app, active }: { store: GameStore; ap
             {snap.paused ? '▶' : '❚❚'}<span className="label"> {snap.paused ? 'Resume' : 'Pause'}</span>
           </button>
           <button onClick={() => setShowSettings(true)} aria-label="Settings">⚙<span className="label"> Settings</span></button>
+          <a className="link" href="#/history" title="Hand history and export">📜<span className="label"> History</span></a>
           {snap.leaveAfterHand ? (
             <button className="on" onClick={() => ctl.cancelLeave()} title="Cancel leaving">Leaving after this hand ✕</button>
           ) : (
@@ -69,6 +72,11 @@ export default function TablePage({ store, app, active }: { store: GameStore; ap
             ctl={ctl}
             onAddChips={addRange ? () => setAddingChips(true) : undefined}
             onLeave={() => setConfirmLeave(true)}
+            onCopyHand={
+              app.lastRecord && snap.hand && app.lastRecord.hand.config.handId === snap.hand.config.handId
+                ? () => copyText(toPokerStars(app.lastRecord!, { allHoleCards: true }))
+                : undefined
+            }
           />
         </div>
         <aside className="log-col">

@@ -2,6 +2,7 @@ import { AiDirector, type DirectorState } from '../ai/director';
 import { secureRng, type Rng } from '../engine/rng';
 import type { ButtonState } from '../engine/table';
 import type { HandState, RakeConfig } from '../engine/types';
+import { makeRecord, type HandRecord } from '../history/record';
 import { getDb, requestPersistentStorage, type BankrollPoint, type PokerDb } from '../storage/db';
 import { TableController, type ControllerState, type Occupant, type Scheduler, type TableSettings } from '../table/controller';
 import { Seating } from '../table/seating';
@@ -64,6 +65,7 @@ export interface TablePreview {
 }
 
 export interface SessionSummary {
+  sessionId: string;
   stake: Stake;
   boughtIn: number;
   cashedOut: number;
@@ -78,6 +80,8 @@ export interface StoreSnapshot {
   lastSession: SessionSummary | null;
   /** Set if saving to the browser fails (e.g. private browsing). */
   storageError: string | null;
+  /** The last finished hand you played (for "copy hand history"). */
+  lastRecord: HandRecord | null;
 }
 
 interface SavedTable {
@@ -109,7 +113,9 @@ export class GameStore {
     table: null,
     lastSession: null,
     storageError: null,
+    lastRecord: null,
   };
+  private lastHandId = 0;
   private listeners = new Set<() => void>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubscribeTable: (() => void) | null = null;
@@ -153,6 +159,8 @@ export class GameStore {
         });
       }
       const rake = { ...DEFAULT_RAKE, ...(rakeRow?.value as Partial<RakeSettings> | undefined) };
+      const lastHand = await this.db.hands.orderBy('id').last();
+      this.lastHandId = lastHand?.id ?? 0;
       const saved = tableRow?.value as SavedTable | undefined;
       const table = saved?.version === 1 ? this.restoreTable(saved, rake) : null;
       this.update({ loaded: true, profile, rake, table });
@@ -347,7 +355,7 @@ export class GameStore {
     this.unsubscribeTable = null;
     t.ctl.suspend();
     const profile = { ...this.snap.profile, bankroll: this.snap.profile.bankroll + stack };
-    const lastSession: SessionSummary = { stake: t.stake, boughtIn: t.boughtIn, cashedOut: stack, hands: t.hands };
+    const lastSession: SessionSummary = { sessionId: t.sessionId, stake: t.stake, boughtIn: t.boughtIn, cashedOut: stack, hands: t.hands };
     this.update({ profile, table: null, lastSession });
     await this.saveNow();
     await this.db.sessions.update(t.sessionId, { endedAt: Date.now(), cashedOut: stack, hands: t.hands }).catch(() => {});
@@ -360,7 +368,19 @@ export class GameStore {
     const hero = hand.players.find((p) => p.seat === t.ctl.getSnapshot().heroSeat);
     if (!hero) return; // you weren't dealt in
     const table = { ...t, hands: t.hands + 1 };
-    this.update({ table });
+    const id = Math.max(Date.now(), this.lastHandId + 1);
+    this.lastHandId = id;
+    const record = makeRecord(hand, {
+      id,
+      sessionId: t.sessionId,
+      stakeId: t.stake.id,
+      stakesLabel: t.stake.label,
+      tableName: t.stake.name,
+      heroSeat: hero.seat,
+      practiceMode: t.ctl.getSnapshot().settings.practiceMode,
+    });
+    this.update({ table, lastRecord: record });
+    void this.db.hands.put(record).catch((e) => this.update({ storageError: `Could not save hand history: ${(e as Error).message}` }));
     void this.db.sessions.update(t.sessionId, { hands: table.hands }).catch(() => {});
     void this.logPoint({ bankroll: this.snap.profile.bankroll, onTable: hero.stack, reason: 'hand', stakeId: t.stake.id, sessionId: t.sessionId });
   }

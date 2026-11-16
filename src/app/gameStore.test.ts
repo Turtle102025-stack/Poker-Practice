@@ -7,6 +7,8 @@ import type { TableController } from '../table/controller';
 import { FakeScheduler } from '../table/fakeScheduler';
 import { STAKES } from '../table/stakes';
 import { GameStore, START_BANKROLL } from './gameStore';
+import { queryHands, summarizeHands } from '../storage/handsRepo';
+import { toPokerStars } from '../history/pokerstars';
 
 let dbCount = 0;
 function setup(seed = 1, db = new PokerDb(`test-${Date.now()}-${dbCount++}`)) {
@@ -241,5 +243,40 @@ describe('saving and resuming', () => {
     // Every board card dealt after the save came off the saved deck, in order.
     const newBoard = done.board.slice(before.hand!.board.length);
     for (const c of newBoard) expect(remaining).toContain(c);
+  });
+});
+
+describe('hand history storage', () => {
+  it('saves every hand you are dealt into, in order, under the session', async () => {
+    const { store, sched, db } = setup(21);
+    await store.load();
+    const t = await sitAtLowStakes(store, 300, 'wait');
+    t.ctl.start();
+    for (let i = 0; i < 3000 && store.getSnapshot().table!.hands < 25; i++) {
+      runBots(t.ctl, sched);
+      const s = t.ctl.getSnapshot();
+      if (s.heroBusted) await store.addChips(300);
+      else if (s.stage === 'in-hand' && s.hand!.toAct === s.heroSeat) {
+        const l = legalActions(s.hand!)!;
+        t.ctl.heroAct(l.canCheck ? { type: 'check' } : l.callAmount <= 15 ? { type: 'call' } : { type: 'fold' });
+      } else if (!sched.runNext()) break;
+    }
+    await new Promise((r) => setTimeout(r, 30));
+    const hands = await queryHands({ sessionId: t.sessionId }, {}, db);
+    expect(hands.length).toBe(store.getSnapshot().table!.hands);
+    expect(hands.length).toBeGreaterThanOrEqual(25);
+    const ids = hands.map((h) => h.id);
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const h of hands) {
+      expect(h.hand.players.some((p) => p.seat === h.heroSeat)).toBe(true);
+      expect(h.hand).not.toHaveProperty('deck');
+    }
+    const sum = await summarizeHands({ sessionId: t.sessionId }, db);
+    expect(sum.net).toBe(hands.reduce((a, h) => a + h.heroNet, 0));
+    expect(store.getSnapshot().lastRecord?.id).toBe(ids[ids.length - 1]);
+    expect(toPokerStars(hands[0])).toMatch(/^PokerStars Hand #\d+:  Hold'em No Limit \(\$1\/\$3 USD\)/);
+    const newest = await queryHands({}, { limit: 5, newestFirst: true }, db);
+    expect(newest[0].id).toBe(ids[ids.length - 1]);
   });
 });

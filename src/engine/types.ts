@@ -40,6 +40,8 @@ export interface HandConfig {
   /** Seat posting a UTG straddle (two big blinds), if any. */
   straddleSeat?: number | null;
   rake?: RakeConfig;
+  /** When the hand started (ms since epoch), for hand histories. */
+  startedAt?: number;
 }
 
 export interface PlayerState {

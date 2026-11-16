@@ -14,8 +14,8 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 | 2 | Table UI with simple bots | ✅ Done |
 | 3 | 50 player personalities, seating, tilt | ✅ Done |
 | 4 | Lobby, bankroll, buy-ins, saving progress | ✅ Done |
-| 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | Next |
-| 6 | Notes, stats page, practice mode, polish | |
+| 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | ✅ Done |
+| 6 | Notes, stats page, practice mode, polish | Next |
 
 ## Lobby and bankroll
 
@@ -31,6 +31,30 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 - Rake is off by default; turn it on in the lobby (percent, cap per table, no flop no drop).
 - Everything is saved in your browser (IndexedDB) after every action. Close the page
   mid-hand and you'll come back to the same hand with the same cards to come.
+
+## Hand histories and export
+
+Every hand you're dealt into is saved. Open **📜 Hand history** (lobby or table) to:
+
+- Pick a range: this/last session, today, last 7 days, all hands, or dates.
+- **Download .xlsx** with three sheets plus a Notes sheet:
+  - **Hands** – hand ID, date/time, table, stakes, players, button seat, your seat and
+    position, your cards and starting stack, flop/turn/river, final pot, rake, winner(s)
+    and winning hand, your net ($ and BB), showdown, straddle.
+  - **Actions** – every post, fold, check, call, bet, raise and all-in: amount added,
+    street total ("raise to"), amount faced, pot before/after, bet as % of pot, stack
+    before/after, effective stack, board, and whether it was you. Uncalled bets returned
+    are listed too.
+  - **Players** – one row per player per hand: seat, position, starting stack, hole cards
+    (when shown, always yours, everyone's in practice mode), net result, your label
+    for them, and optionally their true style.
+- **Download CSV** (the same three sheets as three files) or **text** (all hands in
+  PokerStars format).
+- Open any hand and **Copy hand history** to paste it into a chat; the table also has a
+  copy button after each hand.
+
+Bet % of pot: a bet ÷ the pot before it; a raise's extra amount ÷ the pot after calling
+(so a pot-sized raise is 100%).
 
 ## Playing
 

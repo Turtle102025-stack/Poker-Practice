@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  // ExcelJS (~900 KB) is loaded only when you export a spreadsheet.
+  build: { chunkSizeWarningLimit: 1000 },
   test: {
     include: ['src/**/*.test.ts'],
     testTimeout: 60_000,

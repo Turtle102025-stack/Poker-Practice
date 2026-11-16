@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { GameStore } from '../app/gameStore';
+import HistoryPage from './HistoryPage';
 import JoinPage from './JoinPage';
 import LobbyPage from './LobbyPage';
 import RulesCheckPage from './RulesCheckPage';
@@ -26,6 +27,8 @@ export default function App() {
 
   if (route === 'rules') return <RulesCheckPage />;
   if (!snap.loaded) return <div className="page muted">Loading your bankroll…</div>;
+
+  if (route === 'history') return <HistoryPage snap={snap} />;
 
   // Seated at a table: always show it (refreshing brings you back to the same hand).
   if (snap.table) {

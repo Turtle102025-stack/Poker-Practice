@@ -19,6 +19,7 @@ export default function LobbyPage({ store, snap }: Props) {
       <header className="lobby-head">
         <div className="brand"><span className="logo">♠</span> Poker Practice</div>
         <nav className="row wrap">
+          <a className="link" href="#/history">📜 Hand history &amp; export</a>
           <button onClick={() => setShowRake(true)}>⚙ Rake {snap.rake.enabled ? `(${snap.rake.percent}%)` : '(off)'}</button>
           <a className="link" href="#/rules">✓ Rules check</a>
         </nav>

@@ -12,6 +12,8 @@ interface Props {
   /** Opens the add-chips dialog; undefined when you can't add chips right now. */
   onAddChips?: () => void;
   onLeave?: () => void;
+  /** Copies the hand that just finished as PokerStars text. */
+  onCopyHand?: () => Promise<boolean>;
 }
 
 const QUICK: Array<{ label: string; fraction: number | 'min' | 'all' }> = [
@@ -25,7 +27,7 @@ const QUICK: Array<{ label: string; fraction: number | 'min' | 'all' }> = [
 
 const SLIDER_STEPS = 1000;
 
-export function ActionBar({ snap, ctl, onAddChips, onLeave }: Props) {
+export function ActionBar({ snap, ctl, onAddChips, onLeave, onCopyHand }: Props) {
   const { hand, heroSeat, stage } = snap;
   const heroTurn = !!hand && stage === 'in-hand' && hand.toAct === heroSeat;
   const legal = heroTurn ? legalActions(hand!) : null;
@@ -41,7 +43,7 @@ export function ActionBar({ snap, ctl, onAddChips, onLeave }: Props) {
     );
   }
   if (!hand) return <div className="action-bar"><p className="muted">Waiting for players…</p></div>;
-  if (stage === 'hand-over') return <HandOver snap={snap} ctl={ctl} onAddChips={onAddChips} />;
+  if (stage === 'hand-over') return <HandOver snap={snap} ctl={ctl} onAddChips={onAddChips} onCopyHand={onCopyHand} />;
   if (heroTurn && legal) return <YourTurn snap={snap} ctl={ctl} legal={legal} />;
 
   const hero = hand.players.find((p) => p.seat === heroSeat);
@@ -237,7 +239,8 @@ function YourTurn({ snap, ctl, legal }: { snap: TableSnapshot; ctl: TableControl
   );
 }
 
-function HandOver({ snap, ctl, onAddChips }: { snap: TableSnapshot; ctl: TableController; onAddChips?: () => void }) {
+function HandOver({ snap, ctl, onAddChips, onCopyHand }: { snap: TableSnapshot; ctl: TableController; onAddChips?: () => void; onCopyHand?: () => Promise<boolean> }) {
+  const [copied, setCopied] = useState(false);
   const hand = snap.hand!;
   const net = hand.result?.net[snap.heroSeat];
   const heroIn = net !== undefined;
@@ -285,6 +288,16 @@ function HandOver({ snap, ctl, onAddChips }: { snap: TableSnapshot; ctl: TableCo
         </button>
         {secs !== null && <span className="muted">Next hand in {secs}s</span>}
         {onAddChips && <button onClick={onAddChips}>Add chips</button>}
+        {onCopyHand && (
+          <button
+            onClick={async () => {
+              setCopied(await onCopyHand());
+              setTimeout(() => setCopied(false), 2000);
+            }}
+          >
+            {copied ? 'Copied ✓' : 'Copy hand history'}
+          </button>
+        )}
       </div>
       {snap.afterNotes.length > 0 && <p className="muted small">{snap.afterNotes.join(" ")}</p>}
       {heroIn && net !== 0 && <span className="sr-only">{signedMoney(net!)}</span>}

@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { HandRecord } from '../history/record';
 
 /**
  * Everything saved in the browser (IndexedDB). It survives page refreshes and
@@ -40,6 +41,7 @@ export class PokerDb extends Dexie {
   kv!: Table<KvRow, string>;
   bankroll!: Table<BankrollPoint, number>;
   sessions!: Table<SessionRow, string>;
+  hands!: Table<HandRecord, number>;
 
   constructor(name = 'poker-practice') {
     super(name);
@@ -47,6 +49,10 @@ export class PokerDb extends Dexie {
       kv: 'key',
       bankroll: '++id, ts',
       sessions: 'id, startedAt, stakeId',
+    });
+    // Version 2: every hand you play, for your history and exports.
+    this.version(2).stores({
+      hands: 'id, endedAt, sessionId, stakeId',
     });
   }
 }

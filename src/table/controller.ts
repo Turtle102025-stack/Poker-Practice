@@ -500,6 +500,7 @@ export class TableController {
       livePosters: plan.livePosters,
       straddleSeat,
       rake: this.snap.table.rake,
+      startedAt: Date.now(),
     };
     const hand = startHand(config, shuffledDeck(this.rng));
     this.update({ seats, hand, handNo, stage: 'in-hand', autoDealAt: null, fastForward: false, notices, afterNotes: [] });
