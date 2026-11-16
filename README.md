@@ -15,7 +15,7 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 | 3 | 50 player personalities, seating, tilt | ✅ Done |
 | 4 | Lobby, bankroll, buy-ins, saving progress | ✅ Done |
 | 5 | Hand history storage and export (.xlsx, CSV, PokerStars text) | ✅ Done |
-| 6 | Notes, stats page, practice mode, polish | Next |
+| 6 | Notes, stats page, practice mode, polish | ✅ Done |
 
 ## Lobby and bankroll
 
@@ -31,6 +31,23 @@ for review. Everything runs in your browser: no server, no accounts, no real mon
 - Rake is off by default; turn it on in the lobby (percent, cap per table, no flop no drop).
 - Everything is saved in your browser (IndexedDB) after every action. Close the page
   mid-hand and you'll come back to the same hand with the same cards to come.
+
+## Notes, reads and stats
+
+- **Click any player** at the table to see what you'd notice about them, tag them with a
+  label (Nit, Semi-nit, Tight Passive, Loose Passive Rec, Loose Aggressive Rec, Overly
+  Aggressive Reg, Good Reg, Short Stacker, Unknown) and write notes. Your label shows on
+  their seat. Notes are saved and kept between sessions.
+- The panel shows what you've observed **this session and all time**: hands, VPIP, PFR,
+  limp, 3-bet, c-bet, fold to c-bet, showdown and aggression.
+- **👥 Players & reads** (lobby) lists everyone you've played with. **🔍 Reveal styles**
+  shows each player's true style and scores your reads.
+- **📈 Stats**: bankroll over time (hover or use the arrow keys for values), result since
+  you started, hands played, your VPIP and PFR, results by table and by position, and
+  every session.
+- **Practice mode** (on by default) shows everyone's hole cards after each hand.
+- **💾 Backup** (lobby) downloads everything as one file; restoring it brings your
+  bankroll, hands, notes and stats into any browser.
 
 ## Hand histories and export
 
@@ -112,7 +129,10 @@ Every push to `main` runs on GitHub Actions (see the **Actions** tab):
    actions, and players coming and going; every showdown is re-checked with a
    second, independent hand evaluator
 4. A 30,000-hand run of the computer players, printing each style's measured stats
-5. Build, then publish to GitHub Pages
+5. Build, then an end-to-end test in a real browser: buy in, play 200 hands (with a
+   refresh mid-hand and deliberately illegal bet sizes), leave, check the bankroll,
+   export the spreadsheet and check that every hand's bets add up to its pot
+6. Publish to GitHub Pages
 
 If any step fails, the site is not updated.
 
@@ -146,6 +166,7 @@ npm run sim -- 100000   # rules simulation
 npm run calibrate -- 50000   # measure the computer players' styles
 npm run play       # play in the terminal
 npm run build      # production build into dist/
+npm run e2e        # end-to-end test (after build); SOAK_HANDS=500 npm run e2e for a longer run
 ```
 
 Code layout:
@@ -154,5 +175,9 @@ Code layout:
   button movement, player view (the only data computer players receive)
 - `src/ai/` computer players
 - `src/table/` table controller: the game loop between the engine, the computer players and the UI
+- `src/app/` your bankroll, sessions, notes and stats (the game store)
+- `src/history/` hand records, PokerStars text, spreadsheet/CSV export
+- `src/storage/` IndexedDB (Dexie), hand queries, backup/restore
 - `src/ui/` React user interface
+- `e2e/` end-to-end test that plays through the real page
 - `scripts/` command-line tools

@@ -3,7 +3,8 @@ import { secureRng, type Rng } from '../engine/rng';
 import type { ButtonState } from '../engine/table';
 import type { HandState, RakeConfig } from '../engine/types';
 import { makeRecord, type HandRecord } from '../history/record';
-import { getDb, requestPersistentStorage, type BankrollPoint, type PokerDb } from '../storage/db';
+import { emptyCounts, recordHand, type StatCounts } from '../ai/publicStats';
+import { getDb, requestPersistentStorage, type BankrollPoint, type PlayerNote, type PokerDb, type ReadLabel } from '../storage/db';
 import { TableController, type ControllerState, type Occupant, type Scheduler, type TableSettings } from '../table/controller';
 import { Seating } from '../table/seating';
 import { stakeById, STAKES, type Stake } from '../table/stakes';
@@ -82,6 +83,10 @@ export interface StoreSnapshot {
   storageError: string | null;
   /** The last finished hand you played (for "copy hand history"). */
   lastRecord: HandRecord | null;
+  /** Your label and notes on each player, by player id. */
+  notes: Record<string, PlayerNote>;
+  /** Everything you've observed about each player, across all hands you've played. */
+  observed: Record<string, StatCounts>;
 }
 
 interface SavedTable {
@@ -114,6 +119,8 @@ export class GameStore {
     lastSession: null,
     storageError: null,
     lastRecord: null,
+    notes: {},
+    observed: {},
   };
   private lastHandId = 0;
   private listeners = new Set<() => void>();
@@ -163,7 +170,12 @@ export class GameStore {
       this.lastHandId = lastHand?.id ?? 0;
       const saved = tableRow?.value as SavedTable | undefined;
       const table = saved?.version === 1 ? this.restoreTable(saved, rake) : null;
-      this.update({ loaded: true, profile, rake, table });
+      const notes: Record<string, PlayerNote> = {};
+      for (const n of await this.db.notes.toArray()) notes[n.playerId] = n;
+      let observed: Record<string, StatCounts> = {};
+      for (const o of await this.db.observed.toArray()) observed[o.playerId] = o.counts;
+      if (Object.keys(observed).length === 0 && lastHand) observed = await this.rebuildObserved();
+      this.update({ loaded: true, profile, rake, table, notes, observed });
     } catch (e) {
       this.update({ loaded: true, storageError: `Could not open saved data: ${(e as Error).message}` });
     }
@@ -379,7 +391,16 @@ export class GameStore {
       heroSeat: hero.seat,
       practiceMode: t.ctl.getSnapshot().settings.practiceMode,
     });
-    this.update({ table, lastRecord: record });
+    // What you saw this hand goes into your all-time read on each player.
+    const counts = new Map<string, StatCounts>(
+      hand.players.map((p) => [p.id, { ...(this.snap.observed[p.id] ?? emptyCounts()) }]),
+    );
+    recordHand(hand, counts);
+    const observed = { ...this.snap.observed, ...Object.fromEntries(counts) };
+    this.update({ table, lastRecord: record, observed });
+    void this.db.observed
+      .bulkPut([...counts].map(([playerId, c]) => ({ playerId, counts: c, lastSeen: record.endedAt })))
+      .catch(() => {});
     void this.db.hands.put(record).catch((e) => this.update({ storageError: `Could not save hand history: ${(e as Error).message}` }));
     void this.db.sessions.update(t.sessionId, { hands: table.hands }).catch(() => {});
     void this.logPoint({ bankroll: this.snap.profile.bankroll, onTable: hero.stack, reason: 'hand', stakeId: t.stake.id, sessionId: t.sessionId });
@@ -409,6 +430,39 @@ export class GameStore {
       /* ignore */
     }
     this.scheduleSave();
+  }
+
+  /* ---------------- notes on players ---------------- */
+
+  labelFor = (playerId: string): ReadLabel | undefined => this.snap.notes[playerId]?.label;
+
+  async setNote(playerId: string, patch: { label?: ReadLabel; text?: string }): Promise<void> {
+    const prev = this.snap.notes[playerId] ?? { playerId, label: 'Unknown' as ReadLabel, text: '', updatedAt: 0 };
+    const next: PlayerNote = { ...prev, ...patch, updatedAt: Date.now() };
+    const notes = { ...this.snap.notes };
+    const empty = next.label === 'Unknown' && next.text.trim() === '';
+    if (empty) delete notes[playerId];
+    else notes[playerId] = next;
+    this.update({ notes });
+    try {
+      if (empty) await this.db.notes.delete(playerId);
+      else await this.db.notes.put(next);
+    } catch (e) {
+      this.update({ storageError: `Could not save note: ${(e as Error).message}` });
+    }
+  }
+
+  /** Recomputes your observed stats on every player from all saved hands. */
+  async rebuildObserved(): Promise<Record<string, StatCounts>> {
+    const counts = new Map<string, StatCounts>();
+    const lastSeen = new Map<string, number>();
+    await this.db.hands.orderBy('id').each((r) => {
+      recordHand(r.hand as unknown as HandState, counts);
+      for (const p of r.hand.players) lastSeen.set(p.id, r.endedAt);
+    });
+    await this.db.observed.clear();
+    await this.db.observed.bulkPut([...counts].map(([playerId, c]) => ({ playerId, counts: c, lastSeen: lastSeen.get(playerId) ?? 0 })));
+    return Object.fromEntries(counts);
   }
 
   dismissLastSession(): void {

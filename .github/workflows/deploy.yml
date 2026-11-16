@@ -37,6 +37,12 @@ jobs:
         run: npm run calibrate -- 30000 1
       - name: Build site
         run: npx vite build
+      - name: Install a browser for the end-to-end test
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end test (buys in, plays 200 hands in a real browser, leaves, exports)
+        run: npx playwright test
+        env:
+          SOAK_HANDS: 200
       - uses: actions/configure-pages@v6
         if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v5

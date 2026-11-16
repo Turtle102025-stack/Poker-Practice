@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type { HandRecord } from '../history/record';
+import type { StatCounts } from '../ai/publicStats';
 
 /**
  * Everything saved in the browser (IndexedDB). It survives page refreshes and
@@ -37,11 +38,34 @@ export interface SessionRow {
   hands: number;
 }
 
+/** Your read on a player: one of the style labels, or Unknown. */
+export const READ_LABELS = [
+  'Unknown', 'Nit', 'Semi-nit', 'Tight Passive', 'Loose Passive Rec', 'Loose Aggressive Rec',
+  'Overly Aggressive Reg', 'Good Reg', 'Short Stacker',
+] as const;
+export type ReadLabel = (typeof READ_LABELS)[number];
+
+export interface PlayerNote {
+  playerId: string;
+  label: ReadLabel;
+  text: string;
+  updatedAt: number;
+}
+
+/** What you've observed about a player across every hand you've played with them. */
+export interface ObservedRow {
+  playerId: string;
+  counts: StatCounts;
+  lastSeen: number;
+}
+
 export class PokerDb extends Dexie {
   kv!: Table<KvRow, string>;
   bankroll!: Table<BankrollPoint, number>;
   sessions!: Table<SessionRow, string>;
   hands!: Table<HandRecord, number>;
+  notes!: Table<PlayerNote, string>;
+  observed!: Table<ObservedRow, string>;
 
   constructor(name = 'poker-practice') {
     super(name);
@@ -53,6 +77,11 @@ export class PokerDb extends Dexie {
     // Version 2: every hand you play, for your history and exports.
     this.version(2).stores({
       hands: 'id, endedAt, sessionId, stakeId',
+    });
+    // Version 3: your notes and labels on players, and what you've observed about them.
+    this.version(3).stores({
+      notes: 'playerId',
+      observed: 'playerId',
     });
   }
 }

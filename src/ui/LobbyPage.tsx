@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { GameStore, RakeSettings, StoreSnapshot } from '../app/gameStore';
 import { STAKES } from '../table/stakes';
+import { BackupDialog } from './BackupDialog';
 import { money, signedMoney } from './format';
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 /** The card room: your bankroll and the five games. */
 export default function LobbyPage({ store, snap }: Props) {
   const [showRake, setShowRake] = useState(false);
+  const [showBackup, setShowBackup] = useState(false);
   const bankroll = snap.profile.bankroll;
   const last = snap.lastSession;
 
@@ -19,8 +21,12 @@ export default function LobbyPage({ store, snap }: Props) {
       <header className="lobby-head">
         <div className="brand"><span className="logo">♠</span> Poker Practice</div>
         <nav className="row wrap">
+          <a className="link" href="#/stats">📈 Stats</a>
           <a className="link" href="#/history">📜 Hand history &amp; export</a>
+          <a className="link" href="#/players">👥 Players &amp; reads</a>
+          <a className="link" href="#/players/reveal">🔍 Reveal styles</a>
           <button onClick={() => setShowRake(true)}>⚙ Rake {snap.rake.enabled ? `(${snap.rake.percent}%)` : '(off)'}</button>
+          <button onClick={() => setShowBackup(true)}>💾 Backup</button>
           <a className="link" href="#/rules">✓ Rules check</a>
         </nav>
       </header>
@@ -79,6 +85,7 @@ export default function LobbyPage({ store, snap }: Props) {
         Everything is saved in this browser: your bankroll, the table you're at (even mid-hand), and your settings.
       </p>
 
+      {showBackup && <BackupDialog seated={!!snap.table} onClose={() => setShowBackup(false)} />}
       {showRake && <RakeDialog rake={snap.rake} onSave={(r) => { void store.setRake(r); setShowRake(false); }} onClose={() => setShowRake(false)} />}
     </div>
   );

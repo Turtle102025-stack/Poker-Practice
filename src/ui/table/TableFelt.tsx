@@ -12,6 +12,8 @@ interface Props {
   snap: TableSnapshot;
   onSeatClick?: (seat: number) => void;
   isTilted?: (playerId: string) => boolean;
+  /** Your label for a player, if you've tagged them. */
+  labelOf?: (playerId: string) => string | undefined;
   /** Join screen: the seat you picked, and a handler to pick an open seat. */
   pickSeat?: number | null;
   onPickSeat?: (seat: number) => void;
@@ -48,7 +50,7 @@ function lastActionLabel(hand: HandState, p: PlayerState): string | null {
   }
 }
 
-export function TableFelt({ snap, onSeatClick, isTilted, pickSeat, onPickSeat }: Props) {
+export function TableFelt({ snap, onSeatClick, isTilted, labelOf, pickSeat, onPickSeat }: Props) {
   const { hand, seats, heroSeat, table, settings } = snap;
   const n = table.numSeats;
   const done = hand?.phase === 'complete';
@@ -138,6 +140,7 @@ export function TableFelt({ snap, onSeatClick, isTilted, pickSeat, onPickSeat }:
             highlightCards={highlightCards}
             onClick={onSeatClick}
             picked={pickSeat === seat}
+            myLabel={occ && !occ.isHero ? labelOf?.(occ.id) : undefined}
             onPick={onPickSeat}
             badge={
               snap.settings.revealStyles && occ && !occ.isHero && ROSTER_BY_ID.has(occ.id)
@@ -173,11 +176,12 @@ interface SeatProps {
   highlightCards: Set<number>;
   onClick?: (seat: number) => void;
   badge?: string;
+  myLabel?: string;
   picked?: boolean;
   onPick?: (seat: number) => void;
 }
 
-function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highlightCards, onClick, badge, picked, onPick }: SeatProps) {
+function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highlightCards, onClick, badge, myLabel, picked, onPick }: SeatProps) {
   if (!occ && onPick) {
     return (
       <div className={`seat empty pick ${picked ? 'picked' : ''}`} style={style}>
@@ -239,6 +243,7 @@ function SeatView({ seat, style, occ, player, hand, snap, won, showCards, highli
             <span className={`tag ${tagClass}`}>{label}</span>
           ) : null}
         </div>
+        {myLabel && myLabel !== 'Unknown' && <div className="badge mine" title="Your label">{myLabel}</div>}
         {badge && <div className="badge">{badge}</div>}
         {acting && <div className="think" key={`${hand?.events.length}`} />}
       </div>

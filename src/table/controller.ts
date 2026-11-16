@@ -348,6 +348,7 @@ export class TableController {
     if (this.restored) {
       this.restored = false;
       if (this.snap.stage === 'in-hand') this.step();
+      else if (!this.snap.heroBusted) this.scheduleAutoDeal(false);
       return;
     }
     if (this.snap.stage === 'in-hand') this.step();

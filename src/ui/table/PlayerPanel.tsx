@@ -1,54 +1,84 @@
 import { ARCHETYPE_LABELS, ARCHETYPE_SUMMARIES } from '../../ai/archetypes';
 import type { ObservedStats } from '../../ai/publicStats';
 import { ROSTER_BY_ID } from '../../ai/roster';
-import type { Occupant } from '../../table/controller';
+import type { PlayerNote, ReadLabel } from '../../storage/db';
+import { ReadEditor } from '../components/ReadEditor';
 import { money } from '../format';
 
 interface Props {
-  occ: Occupant;
-  stats: ObservedStats;
+  playerId: string;
+  name: string;
+  seat?: number;
+  stack?: number;
+  session?: ObservedStats;
+  allTime: ObservedStats;
+  note?: PlayerNote;
+  onSaveNote?: (patch: { label?: ReadLabel; text?: string }) => void;
   revealStyle: boolean;
-  tilted: boolean;
+  tilted?: boolean;
   onClose: () => void;
 }
 
-const pct = (x: number | null) => (x === null ? '–' : `${Math.round(x * 100)}%`);
+const pct = (x: number | null | undefined) => (x === null || x === undefined ? '–' : `${Math.round(x * 100)}%`);
+const af = (x: number | null | undefined) => (x === null || x === undefined ? '–' : x.toFixed(1));
 
-/** What you know about a player: what you can see, and what you've observed. */
-export function PlayerPanel({ occ, stats, revealStyle, tilted, onClose }: Props) {
-  const player = ROSTER_BY_ID.get(occ.id);
+/** What you know about a player: what you can see, your read, and what you've observed. */
+export function PlayerPanel({ playerId, name, seat, stack, session, allTime, note, onSaveNote, revealStyle, tilted, onClose }: Props) {
+  const player = ROSTER_BY_ID.get(playerId);
+  const isHero = playerId === 'hero';
+  const trueLabel = player ? ARCHETYPE_LABELS[player.archetype] : null;
+  const myLabel = note?.label && note.label !== 'Unknown' ? note.label : null;
+  const rows: Array<[string, string, (s: ObservedStats) => string]> = [
+    ['Hands seen', 'Hands you were both dealt into', (s) => String(s.hands)],
+    ['VPIP', 'Voluntarily put money in preflop', (s) => pct(s.vpip)],
+    ['PFR', 'Raised preflop', (s) => pct(s.pfr)],
+    ['Limped', 'Called the big blind first in', (s) => pct(s.limp)],
+    ['3-bet', 'Re-raised when facing one raise', (s) => pct(s.threeBet)],
+    ['C-bet', 'Bet the flop after raising preflop', (s) => pct(s.cbet)],
+    ['Fold to c-bet', 'Folded to a flop continuation bet', (s) => pct(s.foldToCbet)],
+    ['Showdown', 'Went to showdown after seeing the flop', (s) => pct(s.wtsd)],
+    ['Aggression', '(Bets + raises) ÷ calls after the flop', (s) => af(s.af)],
+  ];
   return (
     <div className="settings-backdrop" onClick={onClose}>
-      <div className="settings player-panel" role="dialog" aria-label={`About ${occ.name}`} onClick={(e) => e.stopPropagation()}>
+      <div className="settings player-panel" role="dialog" aria-label={`About ${name}`} onClick={(e) => e.stopPropagation()}>
         <div className="row between">
-          <h2>{occ.isHero ? 'You' : occ.name}</h2>
+          <h2>{isHero ? 'You' : name}{myLabel && <span className="label-pill">{myLabel}</span>}</h2>
           <button onClick={onClose} aria-label="Close">✕</button>
         </div>
-        <p className="muted">Seat {occ.seat + 1} · stack {money(occ.stack)}</p>
+        {seat !== undefined && <p className="muted">Seat {seat + 1}{stack !== undefined ? ` · stack ${money(stack)}` : ''}</p>}
         {player && <p className="desc">{player.description}</p>}
         {player && revealStyle && (
           <p className="reveal">
-            <b>True style: {ARCHETYPE_LABELS[player.archetype]}.</b> {ARCHETYPE_SUMMARIES[player.archetype]}
+            <b>True style: {trueLabel}.</b> {ARCHETYPE_SUMMARIES[player.archetype]}
+            {myLabel && <><br />Your read: {myLabel} {myLabel === trueLabel ? '✓ correct' : '✗ not quite'}</>}
             {tilted && <><br /><b>Currently on tilt.</b></>}
           </p>
         )}
 
-        <h3>Observed this session</h3>
+        {!isHero && onSaveNote && (
+          <>
+            <h3>Your read</h3>
+            <ReadEditor key={playerId} note={note} onSave={onSaveNote} />
+          </>
+        )}
+
+        <h3>{isHero ? 'Your stats' : 'What you’ve observed'}</h3>
         <table className="stat-table">
+          <thead>
+            <tr><th /><th className="num">{session ? 'This session' : ''}</th><th className="num">All time</th></tr>
+          </thead>
           <tbody>
-            <tr><td>Hands seen</td><td className="num">{stats.hands}</td></tr>
-            <tr><td title="Voluntarily put money in the pot preflop">VPIP</td><td className="num">{pct(stats.vpip)}</td></tr>
-            <tr><td title="Raised preflop">PFR</td><td className="num">{pct(stats.pfr)}</td></tr>
-            <tr><td>Limped</td><td className="num">{pct(stats.limp)}</td></tr>
-            <tr><td>3-bet</td><td className="num">{pct(stats.threeBet)}</td></tr>
-            <tr><td>C-bet</td><td className="num">{pct(stats.cbet)}</td></tr>
-            <tr><td>Fold to c-bet</td><td className="num">{pct(stats.foldToCbet)}</td></tr>
-            <tr><td title="Went to showdown after seeing the flop">Showdown</td><td className="num">{pct(stats.wtsd)}</td></tr>
-            <tr><td title="(Bets + raises) ÷ calls after the flop">Aggression</td><td className="num">{stats.af === null ? '–' : stats.af.toFixed(1)}</td></tr>
+            {rows.map(([label, title, f]) => (
+              <tr key={label}>
+                <td title={title}>{label}</td>
+                <td className="num">{session ? f(session) : ''}</td>
+                <td className="num">{f(allTime)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
-        {stats.hands < 30 && <p className="muted small">Small sample: stats settle down after 50+ hands.</p>}
-        <p className="muted small">Your notes and labels for players arrive in Phase 6.</p>
+        {allTime.hands < 30 && <p className="muted small">Small sample: stats settle down after 50+ hands.</p>}
       </div>
     </div>
   );

@@ -280,3 +280,46 @@ describe('hand history storage', () => {
     expect(newest[0].id).toBe(ids[ids.length - 1]);
   });
 });
+
+describe('notes and observed stats', () => {
+  it('labels and notes persist; empty notes are removed', async () => {
+    const { store, db } = setup(31);
+    await store.load();
+    await store.setNote('bigmike', { label: 'Loose Passive Rec', text: 'Calls three streets with second pair' });
+    await store.setNote('harold', { text: 'Only raises with QQ+' });
+    const again = setup(32, db).store;
+    await again.load();
+    expect(again.getSnapshot().notes.bigmike).toMatchObject({ label: 'Loose Passive Rec', text: 'Calls three streets with second pair' });
+    expect(again.labelFor('harold')).toBe('Unknown');
+    await again.setNote('harold', { text: '' });
+    expect(again.getSnapshot().notes.harold).toBeUndefined();
+    expect(await db.notes.count()).toBe(1);
+  });
+
+  it('observed stats build up hand by hand and match a rebuild from saved hands', async () => {
+    const { store, sched, db } = setup(41);
+    await store.load();
+    const t = await sitAtLowStakes(store, 300, 'post');
+    t.ctl.start();
+    for (let i = 0; i < 3000 && store.getSnapshot().table!.hands < 30; i++) {
+      runBots(t.ctl, sched);
+      const s = t.ctl.getSnapshot();
+      if (s.heroBusted) await store.addChips(300);
+      else if (s.stage === 'in-hand' && s.hand!.toAct === s.heroSeat) {
+        const l = legalActions(s.hand!)!;
+        t.ctl.heroAct(l.canCheck ? { type: 'check' } : l.callAmount <= 12 ? { type: 'call' } : { type: 'fold' });
+      } else if (!sched.runNext()) break;
+    }
+    await new Promise((r) => setTimeout(r, 30));
+    const live = store.getSnapshot().observed;
+    expect(live.hero.hands).toBe(store.getSnapshot().table!.hands);
+    expect(live.hero.vpip).toBeGreaterThan(0);
+    const rebuilt = await store.rebuildObserved();
+    expect(rebuilt).toEqual(live);
+    // Saved too: a reload sees the same numbers.
+    const again = setup(42, db).store;
+    await again.load();
+    expect(again.getSnapshot().observed).toEqual(live);
+  });
+});
+

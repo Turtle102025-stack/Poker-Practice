@@ -3,7 +3,9 @@ import { GameStore } from '../app/gameStore';
 import HistoryPage from './HistoryPage';
 import JoinPage from './JoinPage';
 import LobbyPage from './LobbyPage';
+import PlayersPage from './PlayersPage';
 import RulesCheckPage from './RulesCheckPage';
+import StatsPage from './StatsPage';
 import { loadSettings } from './settingsStore';
 import TablePage from './table/TablePage';
 
@@ -28,7 +30,11 @@ export default function App() {
   if (route === 'rules') return <RulesCheckPage />;
   if (!snap.loaded) return <div className="page muted">Loading your bankroll…</div>;
 
-  if (route === 'history') return <HistoryPage snap={snap} />;
+  if (route === 'history') return <HistoryPage snap={snap} labelFor={store.labelFor} />;
+  if (route === 'stats') return <StatsPage snap={snap} />;
+  if (route === 'players' || route === 'players/reveal') {
+    return <PlayersPage key={route} store={store} snap={snap} reveal={route === 'players/reveal'} />;
+  }
 
   // Seated at a table: always show it (refreshing brings you back to the same hand).
   if (snap.table) {

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ActiveTable, GameStore, StoreSnapshot } from '../../app/gameStore';
 import type { TableSettings } from '../../table/controller';
+import { emptyCounts, summarize } from '../../ai/publicStats';
 import { copyText } from '../../history/files';
 import { toPokerStars } from '../../history/pokerstars';
 import { ChipsDialog } from '../components/ChipsDialog';
@@ -56,6 +57,7 @@ export default function TablePage({ store, app, active }: { store: GameStore; ap
           </button>
           <button onClick={() => setShowSettings(true)} aria-label="Settings">⚙<span className="label"> Settings</span></button>
           <a className="link" href="#/history" title="Hand history and export">📜<span className="label"> History</span></a>
+          <a className="link" href="#/stats" title="Your stats">📈<span className="label"> Stats</span></a>
           {snap.leaveAfterHand ? (
             <button className="on" onClick={() => ctl.cancelLeave()} title="Cancel leaving">Leaving after this hand ✕</button>
           ) : (
@@ -66,7 +68,7 @@ export default function TablePage({ store, app, active }: { store: GameStore; ap
 
       <main className="table-layout">
         <div className="table-col">
-          <TableFelt snap={snap} onSeatClick={setPanelSeat} isTilted={(id) => director.tiltOf(id) > 0.25} />
+          <TableFelt snap={snap} onSeatClick={setPanelSeat} isTilted={(id) => director.tiltOf(id) > 0.25} labelOf={(id) => app.notes[id]?.label} />
           <ActionBar
             snap={snap}
             ctl={ctl}
@@ -98,8 +100,14 @@ export default function TablePage({ store, app, active }: { store: GameStore; ap
       )}
       {panelOcc && (
         <PlayerPanel
-          occ={panelOcc}
-          stats={director.stats.get(panelOcc.id)}
+          playerId={panelOcc.id}
+          name={panelOcc.name}
+          seat={panelOcc.seat}
+          stack={panelOcc.isHero ? heroStack : panelOcc.stack}
+          session={director.stats.get(panelOcc.id)}
+          allTime={summarize(app.observed[panelOcc.id] ?? emptyCounts())}
+          note={app.notes[panelOcc.id]}
+          onSaveNote={(patch) => void store.setNote(panelOcc.id, patch)}
           revealStyle={snap.settings.revealStyles}
           tilted={director.tiltOf(panelOcc.id) > 0.25}
           onClose={() => setPanelSeat(null)}
